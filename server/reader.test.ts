@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { normalizeDoi, validPaperContext, verifiedExplanation } from './reader.ts'
+import { hasSectionEvidence, normalizeDoi, validPaperContext, verifiedExplanation } from './reader.ts'
+import { customModel, negotiatedCompletion } from './model.ts'
+import { buildPersona, normalizeProfile } from '../src/persona.ts'
+import { paragraphEvidence } from '../src/lessons.ts'
 import { readerSections, readingBatches, readingSections } from '../src/sections.ts'
 import { locateQuote } from '../src/evidence.ts'
 import { fileDrop } from '../src/drop.ts'
@@ -26,6 +29,44 @@ test('bounds paper chat context and permits a question with no highlighted text'
   assert.equal(validPaperContext('paper', { ...context, text: context.text + '。' }), false)
   assert.equal(validPaperContext('custom', context), false)
   assert.equal(validPaperContext('section', { ...context, quote: false }), false)
+})
+
+test('requires distinct, short quotes and splits fallback input without inventing source text', () => {
+  const one = { id: '1', quote: 'This is an exact quote.' }
+  assert.equal(hasSectionEvidence([one, one]), false)
+  assert.equal(hasSectionEvidence([one, { id: '2', quote: 'a'.repeat(161) }]), false)
+  assert.equal(hasSectionEvidence([one, { ...one, id: '2' }]), true)
+  const text = 'The first paragraph has length.\nThe second paragraph is also usable.'
+  const parts = paragraphEvidence([{ id: 'x', text, title: '方法' }])
+  assert.equal(parts.length, 2)
+  assert.equal(new Set(parts.map(({ id }) => id)).size, 2)
+  assert.ok(parts.every((block) => text.includes(block.text)))
+})
+
+test('profile goals are bounded and empty profile fields are omitted from the persona', () => {
+  assert.equal(normalizeProfile({ goal: '其他', major: '研'.repeat(41) }).major.length, 40)
+  assert.equal(normalizeProfile({ goal: '其他' }).goal, '')
+  assert.equal(buildPersona({ major: '计算机', goal: '写综述' }).label, 'Paper Atlas · 计算机科研搭档')
+  assert.doesNotMatch(buildPersona().system, /研究方向|目的：/)
+})
+
+test('normalizes the provider list route and falls back for rejected reasoning and token fields', async () => {
+  const route = customModel({ base: 'https://example.com/v1/chat/completions', key: 'fixture' }, false, true)
+  assert.equal(route.url.pathname, '/v1/models')
+  const payloads: Record<string, unknown>[] = []
+  const config = { base: 'https://example.test/v1', model: 'gpt-5-fixture', effort: 'deep' as const }
+  const send = async (payload: Record<string, unknown>) => {
+    payloads.push(payload)
+    if (payload.reasoning_effort) return { status: 400, body: { error: 'unsupported reasoning_effort' } }
+    if (payload.max_tokens) return { status: 400, body: { error: 'use max_completion_tokens instead' } }
+    return { status: 200, body: { choices: [{ message: { content: 'ok' } }] } }
+  }
+  assert.equal(await negotiatedCompletion(config, [], send, false), 'ok')
+  assert.equal(payloads[0].reasoning_effort, 'high')
+  assert.equal(payloads[2].max_completion_tokens, 4000)
+  assert.equal(await negotiatedCompletion({ ...config, effort: 'fast' }, [], send, false), 'ok')
+  assert.equal(payloads[3].max_completion_tokens, 1200)
+  assert.equal(payloads.length, 4)
 })
 
 test('a file drop hands the original file to the workspace importer and prevents browser navigation', () => {

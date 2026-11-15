@@ -1,4 +1,6 @@
 import type { Connection } from './ModelSettings'
+import { guestProfile } from './persona'
+import { readEffort } from './effort'
 
 type Status = { lastOkAt?: number; lastError?: string }
 const routes = new Set(['/api/chat', '/api/explain', '/api/discover', '/api/model/test'])
@@ -15,7 +17,11 @@ export function modelStatus(connection?: Connection | null): Status {
 export async function modelFetch(url: string, options?: RequestInit) {
   if (!routes.has(url)) return fetch(url, options)
   let connection: Connection | undefined
-  try { connection = JSON.parse(String(options?.body ?? '{}')).connection } catch {}
+  try {
+    const payload = JSON.parse(String(options?.body ?? '{}'))
+    connection = payload.connection
+    if (url !== '/api/model/test') options = { ...options, body: JSON.stringify({ ...payload, effort: readEffort(), profile: guestProfile() }) }
+  } catch {}
   const id = key(connection)
   function report(value: Status) {
     statuses.set(id, value)
@@ -30,7 +36,7 @@ export async function modelFetch(url: string, options?: RequestInit) {
   }
   if (!options?.signal?.aborted) {
     if (response.ok) report({ lastOkAt: Date.now() })
-    else if (response.status >= 500) {
+    else if (response.status >= 500 || url === '/api/model/test') {
       const { error } = await response.clone().json().catch(() => ({}))
       report({ lastError: typeof error === 'string' ? error.slice(0, 160) : '模型请求失败。' })
     }

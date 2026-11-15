@@ -488,6 +488,12 @@ html[data-theme="dark"] :is(.pdf-original[data-tint=true] canvas, .word-original
 .chat-recent { margin-top: 8px; text-align: center; }
 .conversation-list { flex: 0 1 auto; max-height: 180px; }
 .paper-questions { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border); }
+.chat-model { position: relative; min-width: 0; }
+.chat-model summary { cursor: pointer; overflow-wrap: anywhere; border-radius: 7px; padding: 8px; background: var(--surface-2); }
+.model-popover { position: absolute; bottom: calc(100% + 5px); left: 0; display: grid; gap: 5px; z-index: 5; width: min(220px, 65vw); max-height: 46vh; overflow: auto; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 8px; }
+.model-popover button { overflow-wrap: anywhere; text-align: left; }
+.model-popover [aria-pressed="true"] { color: var(--accent); background: var(--accent-soft); }
+.effort-options { display: flex; gap: 4px; }
 .paper-questions textarea, .tab-content details > textarea { width: 100%; }
 .mobile-paper-question { display: none; }
 @media (max-width: 690px) {

@@ -1,12 +1,14 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { ArrowUp, BookOpen, FileText, FolderPlus, Paperclip, Plus } from 'lucide-react'
 import { disciplineLabel, disciplineOptions, fields, type Field, type Paper, type Project, type ReadingStyle } from './papers'
-import type { Connection } from './ModelSettings'
+import { cachedModels, type Connection } from './ModelSettings'
 import { fileDrop } from './drop'
 import { modelFetch } from './modelStatus'
 import type { Conversation } from './conversations'
+import { buildPersona, guestProfile, type Profile } from './persona'
+import { effortLabels, type Effort } from './effort'
 
-export type User = { id: string; name: string; displayName?: string; bio?: string }
+export type User = { id: string; name: string; displayName?: string; bio?: string } & Profile
 type Turn = Conversation['turns'][number]
 
 export async function api<T>(url: string, body?: unknown, signal?: AbortSignal): Promise<T> {
@@ -18,11 +20,13 @@ export async function api<T>(url: string, body?: unknown, signal?: AbortSignal):
   return data
 }
 
-export function ChatHome({ field, discipline, style, connection, model, openSettings, openImport, openLibrary, upload, importBusy, project, openRecent, recent, recentProgress, newConversation, conversation, onChange }: {
+export function ChatHome({ field, discipline, style, connection, model, openSettings, openImport, openLibrary, upload, importBusy, project, openRecent, recent, recentProgress, newConversation, conversation, onChange, user, effort, onEffort, onModel }: {
   field: Field; discipline?: string; style: ReadingStyle; connection: Connection | null; model: string; openSettings: () => void;
   openImport: () => void; openLibrary: (tab: 'mine' | 'preset') => void; upload: (file: File) => void; importBusy: boolean; project?: Project;
   openRecent: () => void; newConversation: () => void; recent?: Paper; recentProgress: string
   conversation: Conversation; onChange: (conversation: Conversation) => Promise<void>
+  user: User | null
+  effort: Effort; onEffort: (effort: Effort) => void; onModel: (model: string) => void
 }) {
   const [pending, setPending] = useState('')
   const request = useRef<AbortController | null>(null)
@@ -31,6 +35,8 @@ export function ChatHome({ field, discipline, style, connection, model, openSett
   const [draft, setDraft] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const persona = buildPersona(user ?? guestProfile())
+  const available = connection ? [...new Set([connection.model, ...cachedModels(connection.base)])] : model ? [model] : []
   async function send(event: FormEvent) {
     event.preventDefault()
     if (request.current || !draft.trim()) return
@@ -48,9 +54,9 @@ export function ChatHome({ field, discipline, style, connection, model, openSett
         field, discipline: disciplineLabel(field, discipline), style, connection,
         turns: next.slice(-13).map((turn) => ({ ...turn, content: turn.content.slice(0, 1800) })),
       }, controller.signal)
-      if (!controller.signal.aborted) await onChange({ ...conversation, turns: [...next, { role: 'assistant', content: reply }],
+      if (!controller.signal.aborted) await onChange({ ...conversation, turns: [...next, { role: 'assistant', content: reply, model: used }],
         title: conversation.turns.length ? conversation.title : Array.from(question).slice(0, 30).join(''),
-        model: used, updatedAt: Date.now() })
+        model: used, effort, updatedAt: Date.now() })
     } catch (reason) {
       if (!controller.signal.aborted) { setError((reason as Error).message); setDraft(question) }
     } finally { request.current = null; setBusy(false); setPending('') }
@@ -58,7 +64,8 @@ export function ChatHome({ field, discipline, style, connection, model, openSett
   return <main className="chat-home" {...fileDrop(upload)}>
     <div className="chat-inner">
       {turns.length ? <div className="chat-transcript" aria-live="polite">{turns.map((turn, i) =>
-        <div className={'chat-bubble ' + turn.role} key={i}><small>{turn.role === 'user' ? '你' : 'Paper Atlas'}</small><p>{turn.content}</p></div>)}
+        <div className={'chat-bubble ' + turn.role} key={i} title={turn.role === 'assistant' ? persona.label : undefined}><small>{turn.role === 'user' ? '你' : 'Paper Atlas'}</small>
+          {turn.role === 'assistant' && (turn.model || conversation.model) && <small>{turn.model || conversation.model}</small>}<p>{turn.content}</p></div>)}
         {busy && <p role="status">正在回复…</p>}
       </div> : <header className="chat-intro"><h1>{project?.title || '今天想读懂什么？'}</h1></header>}
       <form className="chat-composer" onSubmit={send}>
@@ -69,7 +76,17 @@ export function ChatHome({ field, discipline, style, connection, model, openSett
           }} />
         <div className="composer-actions">
           <button className="chat-attach" type="button" disabled={importBusy} aria-label="添加论文" title="拖入或点击添加论文" onClick={openImport}><Paperclip size={16} /></button>
-          <button type="button" className="chat-model" onClick={openSettings}>{model || '连接模型'}</button>
+          <details className="chat-model" onKeyDown={(event) => { if (event.key === 'Escape') event.currentTarget.open = false }}>
+            <summary>{model || '连接模型'} · {effortLabels[effort]}</summary>
+            <div className="model-popover">
+              {available.map((id) => <button key={id} type="button" aria-pressed={model === id} onClick={(event) => {
+                onModel(id); event.currentTarget.closest('details')?.removeAttribute('open')
+              }}>{id}</button>)}
+              <button type="button" onClick={(event) => { event.currentTarget.closest('details')?.removeAttribute('open'); openSettings() }}>手动输入</button>
+              <div className="effort-options" role="group" aria-label="思考强度">{Object.entries(effortLabels).map(([id, label]) =>
+                <button key={id} type="button" aria-pressed={effort === id} onClick={() => onEffort(id as Effort)}>{label}</button>)}</div>
+            </div>
+          </details>
           <button className="chat-send" aria-label="发送消息" disabled={busy || !draft.trim()}><ArrowUp size={19} /></button>
         </div>
       </form>

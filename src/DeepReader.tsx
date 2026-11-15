@@ -8,12 +8,15 @@ import { locateQuote } from './evidence'
 import { PdfOriginal, TextOriginal, WordOriginal } from './Original'
 import { loadReading, saveReading } from './storage'
 import { api } from './Workspace'
-import { reviewBlocks, type Explanation, type Lesson, type PreparedReading } from './lessons'
+import { lessonTerms, paragraphEvidence, reviewBlocks, type Explanation, type Lesson, type PreparedReading } from './lessons'
+import { LessonText } from './LessonText'
+import { buildPersona, guestProfile, type Profile } from './persona'
 
 type Thread = { id: string; sectionId: string; scope: 'section' | 'paper'; question: string; answer: string; quote?: string; at: number; model?: string }
 
-export function DeepReader({ paper, model, connection, openSettings, owner, style, onSection, visible }: {
+export function DeepReader({ paper, model, connection, openSettings, owner, style, onSection, visible, profile }: {
   paper: Paper; owner: string; model: string; connection: Connection | null; openSettings: () => void; style: ReadingStyle; onSection: (id: string) => void; visible: boolean
+  profile?: Profile
 }) {
   const [sections] = useState(() => readerSections(paper.blocks))
   const [index, setIndex] = useState(0)
@@ -46,6 +49,7 @@ export function DeepReader({ paper, model, connection, openSettings, owner, styl
   const section = sections[Math.min(index, sections.length - 1)]
   const currentLessons = { ...prepared?.lessons, ...lessons }
   const currentReview = review ?? prepared?.review
+  const persona = buildPersona(profile ?? guestProfile())
   const pages = [...new Set(section.blocks.flatMap(({ title }) => {
     const page = title.match(/^PDF 第 (\d+) 页$/)
     return page ? [Number(page[1])] : []
@@ -187,7 +191,7 @@ export function DeepReader({ paper, model, connection, openSettings, owner, styl
     finally { setReviewing(false) }
   }
 
-  async function generate(queue: typeof sections, includeReview = false, regenerate = false) {
+  async function generate(queue: typeof sections, includeReview = false, regenerate = false, paragraphs = false) {
     if (job.current || !model || !ready) return
     const controller = new AbortController()
     job.current = controller
@@ -203,17 +207,22 @@ export function DeepReader({ paper, model, connection, openSettings, owner, styl
         setErrors((previous) => ({ ...previous, [batchId]: '' }))
         const position = sections.indexOf(item)
         try {
+          const previous = sections.slice(0, position).reverse().find((chapter) => !chapter.kind)?.batches
+            .map(([block]) => notes[block.id]?.result ?? '').join('\n').slice(0, 300)
+          const nextTitle = sections[position + 1]?.title.slice(0, 160)
+          const evidenceBlocks = paragraphs ? paragraphEvidence(blocks) : blocks
           const response = await modelFetch('/api/explain', {
             method: 'POST', headers: { 'content-type': 'application/json' }, signal: controller.signal,
             body: JSON.stringify({
               deep: true, title: paper.title, field: paper.field, style, discipline: disciplineLabel(paper.field, paper.discipline), question: '', section: item.title.slice(0, 160),
               outline: sections.slice(Math.max(0, position - 2), position + 3).map(({ title }) => title.slice(0, 160)),
-              blocks, connection,
+              blocks: evidenceBlocks, connection, previous, nextTitle, terms: lessonTerms(notes),
             }),
           })
           const output = await response.json()
-          if (!response.ok) throw new Error(output.error || '这节讲解失败。')
+          if (!response.ok) throw new Error(response.status === 422 ? '证据不足，建议直接看原文。' : output.error || '这节讲解失败。')
           if (!controller.signal.aborted) {
+            if (evidenceBlocks !== blocks) output.evidence = output.evidence.map((ref: Lesson['evidence'][number]) => ({ ...ref, id: blocks[0].id }))
             notes[batchId] = output
             setLessons((previous) => ({ ...previous, [batchId]: output }))
           }
@@ -266,7 +275,7 @@ export function DeepReader({ paper, model, connection, openSettings, owner, styl
       {showingReview ? <section className="reading-chapter whole-review"><h2>全文回顾</h2>
         {currentReview && <div className="chat-bubble assistant lesson-bubble"><dl>
           {([['全文主线', currentReview.explanation], ['局限与研究痛点', currentReview.limits], ['研究想法与验证', currentReview.example]] as const)
-            .map(([label, text]) => <div key={label}><dt>{label}</dt><dd>{text}</dd></div>)}
+            .map(([label, text]) => <div key={label}><dt>{label}</dt><dd><LessonText text={text} /></dd></div>)}
           </dl><div className="quote-links" aria-label="回顾引文">{currentReview.evidence.map((ref, i) => <button key={i} onClick={() => jumpToQuote(ref.quote, ref.id)}>定位引文 {i + 1}</button>)}</div></div>}
         {reviewError && <p className="warning" role="alert">{reviewError}</p>}
         {!currentReview && <p className="subtle">回顾会综合按章节取样的原文和已有讲解，区分论文结论与待验证的想法。</p>}
@@ -305,16 +314,17 @@ export function DeepReader({ paper, model, connection, openSettings, owner, styl
           <article className="reading-lesson">
             <h3><Sparkles size={16} /> 对照讲解</h3>
             {sectionError && <p role="alert" className="warning">{sectionError}</p>}
+            {sectionError?.includes('证据不足') && <button className="secondary" disabled={!!working || reviewing} onClick={() => void generate([section], false, true, true)}>按段落重新讲解</button>}
             {section.batches.map(([first], batchIndex) => {
               const lesson = currentLessons[first.id]
               if (!lesson) return null
-              return <div className="chat-bubble assistant lesson-bubble" key={first.id}>
+              return <div className="chat-bubble assistant lesson-bubble" key={first.id} title={persona.label}>
               {section.batches.length > 1 && <h4>本节第 {batchIndex + 1} 部分</h4>}
-              <p className="lesson-model">{lesson.model} · 引文已核对</p>
+              <p className="lesson-model">Paper Atlas · {lesson.model} · 引文已核对</p>
               <dl>{([
                 ['为什么这么做', lesson.why], ['作者是怎么做的', lesson.explanation], ['本节结果与作用', lesson.result],
                 ['举例或推演', lesson.example], ['证据边界', lesson.limits],
-              ] as const).map(([title, text]) => <div key={title}><dt>{title}</dt><dd>{text}</dd></div>)}</dl>
+              ] as const).map(([title, text]) => <div key={title}><dt>{title}</dt><dd><LessonText text={text} /></dd></div>)}</dl>
               <div className="quote-links" aria-label="原文引文">{lesson.evidence.map((ref, i) => <button key={i} onClick={() => jumpToQuote(ref.quote, ref.id)}>定位引文 {i + 1}</button>)}</div>
               </div>
             })}
@@ -335,7 +345,7 @@ export function DeepReader({ paper, model, connection, openSettings, owner, styl
               {threads.filter((item) => item.sectionId === section.id).map((item) => <div className="selection-thread" key={item.id}>
                 <div className="chat-bubble user"><small>你 · {item.scope === 'paper' ? '全文' : '本节'}</small><p>{item.question}</p>
                   {item.quote && <button className="text-button" onClick={() => jumpToQuote(item.quote!)}>定位原文</button>}</div>
-                <div className="chat-bubble assistant"><small>Paper Atlas{item.model && <> · {item.model}</>}</small><p>{item.answer}</p></div>
+                <div className="chat-bubble assistant" title={persona.label}><small>Paper Atlas{item.model && <> · {item.model}</>}</small><p>{item.answer}</p></div>
               </div>)}
               <form onSubmit={(event) => { event.preventDefault(); void ask(question, selection || undefined) }}>
                 <label className="question">范围<select value={scope} onChange={(event) => setScope(event.target.value as typeof scope)}><option value="section">本节</option><option value="paper">全文</option></select></label>

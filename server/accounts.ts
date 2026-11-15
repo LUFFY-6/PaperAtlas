@@ -4,6 +4,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import { DatabaseSync } from 'node:sqlite'
 import { promisify } from 'node:util'
 import { disciplineOptions, fields, type Field } from '../src/papers.ts'
+import { normalizeProfile, profileFields, profileGoals } from '../src/persona.ts'
 
 const derive = promisify(scrypt)
 const week = 7 * 24 * 60 * 60
@@ -22,7 +23,18 @@ function database() {
     CREATE TABLE IF NOT EXISTS sessions (token TEXT PRIMARY KEY, owner TEXT NOT NULL REFERENCES users(id), expires INTEGER NOT NULL);
     CREATE TABLE IF NOT EXISTS projects (id TEXT PRIMARY KEY, owner TEXT NOT NULL REFERENCES users(id), title TEXT NOT NULL, field TEXT NOT NULL, discipline TEXT, created INTEGER NOT NULL);
   `)
+  const columns = new Set(store.prepare('PRAGMA table_info(profiles)').all().map((item) => item.name))
+  for (const column of profileFields) if (!columns.has(column)) store.exec(`ALTER TABLE profiles ADD COLUMN ${column} TEXT NOT NULL DEFAULT ''`)
   return db = store
+}
+
+export function accountUser(req: IncomingMessage) {
+  const token = /(?:^|;\s*)atlas_session=([a-f0-9]{64})(?:;|$)/.exec(req.headers.cookie ?? '')?.[1]
+  if (!token) return
+  return database().prepare(`SELECT users.id, users.name, profiles.displayName, profiles.bio,
+    profiles.education, profiles.major, profiles.researchArea, profiles.goal FROM users
+    JOIN sessions ON users.id = sessions.owner LEFT JOIN profiles ON users.id = profiles.owner
+    WHERE token = ? AND expires > ?`).get(digest(token), Date.now())
 }
 
 const attempts = new Map<string, { count: number; expires: number }>()
@@ -43,7 +55,7 @@ export async function accountRoute(path: string, req: IncomingMessage, res: Serv
   const user = token ? store.prepare('SELECT id, name FROM users JOIN sessions ON users.id = sessions.owner WHERE token = ? AND expires > ?')
     .get(digest(token), Date.now()) as { id: string; name: string } | undefined : undefined
   function profile(account: { id: string; name: string }) {
-    const details = store.prepare('SELECT displayName, bio FROM profiles WHERE owner = ?').get(account.id)
+    const details = store.prepare('SELECT displayName, bio, education, major, researchArea, goal FROM profiles WHERE owner = ?').get(account.id)
     return { ...account, ...details }
   }
   const cookie = (value: string, age: number) =>
@@ -79,8 +91,16 @@ export async function accountRoute(path: string, req: IncomingMessage, res: Serv
       json(400, { error: '昵称需为 1–40 个字符，简介最多 240 个字符。' })
       return true
     }
-    store.prepare('INSERT INTO profiles VALUES (?, ?, ?) ON CONFLICT(owner) DO UPDATE SET displayName = excluded.displayName, bio = excluded.bio')
-      .run(user.id, displayName, bio)
+    if (profileFields.some((key) => body[key] !== undefined && (typeof body[key] !== 'string' || body[key].trim().length > 40))
+      || typeof body.goal === 'string' && body.goal.trim() && !profileGoals.some((goal) => goal === body.goal)) {
+      json(400, { error: '画像字段最多 40 字，请选择有效的阅读目的。' })
+      return true
+    }
+    const extra = normalizeProfile({ ...profile(user), ...body })
+    store.prepare(`INSERT INTO profiles (owner, displayName, bio, education, major, researchArea, goal) VALUES (?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(owner) DO UPDATE SET displayName=excluded.displayName, bio=excluded.bio, education=excluded.education,
+      major=excluded.major, researchArea=excluded.researchArea, goal=excluded.goal`)
+      .run(user.id, displayName, bio, extra.education, extra.major, extra.researchArea, extra.goal)
     json(200, { user: profile(user) })
     return true
   }

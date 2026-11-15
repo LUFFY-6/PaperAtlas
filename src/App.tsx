@@ -14,6 +14,8 @@ import { readerSections, readingSections } from './sections'
 import { applyTheme, readTheme, type Theme } from './theme'
 import { modelFetch, modelStatus } from './modelStatus'
 import { createConversation, listConversations, removeConversation, renameConversation, saveConversation, type Conversation } from './conversations'
+import { normalizeEffort, readEffort, type Effort } from './effort'
+import { References } from './References'
 
 const tabs = [['read', '全文精读', BookOpen], ['compare', '方法对比', Columns3], ['graph', '论文关系', Network], ['source', '文段', FileText]] as const
 type Tab = typeof tabs[number][0]
@@ -86,6 +88,7 @@ function WorkspaceApp({ user, onUser }: { user: User | null; onUser: (user: User
   const [source, setSource] = useState('')
   const [fallback, setFallback] = useState('')
   const [connection, setConnection] = useState<Connection | null>(() => recallConnection(owner))
+  const [defaultEffort, setDefaultEffort] = useState(readEffort)
   const [remembered, setRemembered] = useState(() => !!connection)
   const [storageMessage, setStorageMessage] = useState('')
   const [historyReady, setHistoryReady] = useState(false)
@@ -164,6 +167,12 @@ function WorkspaceApp({ user, onUser }: { user: User | null; onUser: (user: User
       rememberConnection(remember ? next : null, owner)
       setRemembered(!!next && remember)
     } catch { setStorageMessage('模型设置已应用，但浏览器未能记住连接。') }
+  }
+
+  function changeEffort(next: Effort) {
+    if (connection) { changeModel({ ...connection, effort: next }, remembered); return }
+    setDefaultEffort(next)
+    try { localStorage.setItem('paper-atlas-default-effort', next) } catch {}
   }
 
   function choose(next: Paper) {
@@ -452,7 +461,8 @@ function WorkspaceApp({ user, onUser }: { user: User | null; onUser: (user: User
       {modelIssue && view === 'workspace' && <p className="storage-message warning" role="status">{modelIssue}</p>}
       {view === 'library' ? <StudyLibrary openPaper={choose} saved={library} owner={owner} tab={libraryTab} onTab={setLibraryTab} onUpload={() => dropInput.current?.click()}
           onRemove={(item) => { setHistoryAction({ item, action: 'delete' }); historyDialog.current?.showModal() }} /> : showChat || !paper || !current ?
-        <ChatHome key={conversation.id} conversation={conversation} onChange={updateConversation} field={project?.field || 'custom'} discipline={project?.discipline} project={project} style={style}
+        <ChatHome key={conversation.id} conversation={conversation} onChange={updateConversation} user={user} field={project?.field || 'custom'} discipline={project?.discipline} project={project} style={style}
+          effort={connection ? normalizeEffort(connection.effort) : defaultEffort} onEffort={changeEffort} onModel={(model) => { if (connection) changeModel({ ...connection, model }, remembered) }}
           connection={connection} model={activeModel} openSettings={openSettings}
           openImport={() => dropInput.current?.click()} openLibrary={(tab) => { setLibraryTab(tab); setView('library') }} upload={openImport} importBusy={importBusy}
           recent={recent} recentProgress={recent?.id === library[0]?.id ? recentProgress : ''} openRecent={() => { if (recent) { choose(recent); setTab('read') } }} newConversation={newConversation} /> : <div className={`shell reader-shell ${tab === 'read' ? 'reader-deep' : ''}`}>
@@ -465,7 +475,7 @@ function WorkspaceApp({ user, onUser }: { user: User | null; onUser: (user: User
         <nav className="tabs" aria-label="论文阅读视图">{tabs.map(([id, label, Icon]) => <button type="button" key={id} aria-pressed={tab === id} onClick={() => { setTab(id); setError('') }}><Icon size={16} />{label}</button>)}</nav>
         <div className="feedback" aria-live="polite">{busy && <div className="notice" role="status">{busy}<button onClick={() => { request.current?.abort(); setBusy('') }}>取消</button></div>}{error && <div className="warning" role="alert">{error}</div>}</div>
         <div hidden={tab !== 'read'}><DeepReader key={paper.id} paper={paper} owner={owner} style={style} model={activeModel} connection={connection}
-          openSettings={openSettings} onSection={setCurrentSection} visible={tab === 'read'} /></div>
+          openSettings={openSettings} onSection={setCurrentSection} visible={tab === 'read'} profile={user ?? undefined} /></div>
         {(tab === 'compare' || tab === 'graph') && <section className="tab-content discovery">
           <div className="source-heading"><h2>{tab === 'compare' ? '查找同类研究' : '论文在领域中的位置'}</h2>
             {activeModel ? <button className="primary" disabled={!!busy} onClick={findRelated}><Search size={15} />{discovery ? '重新检索' : '检索并分析'}</button>
@@ -510,6 +520,7 @@ function WorkspaceApp({ user, onUser }: { user: User | null; onUser: (user: User
             : paper.original && paper.format === 'DOCX' ? <WordOriginal key={paper.id} original={paper.original} anchor={current.text.slice(0, 60)} />
               : paper.original && ['MD', 'TXT'].includes(paper.format ?? '') ? <TextOriginal key={paper.id} original={paper.original} anchor={current.text.slice(0, 60)} />
                 : <blockquote>{current.text}</blockquote>}
+          <References key={paper.id} />
         </div>}
       </main>
       {tab !== 'read' && <aside className="evidence" aria-label="论文证据">
