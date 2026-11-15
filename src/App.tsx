@@ -3,16 +3,17 @@ import { ArrowUpRight, BookOpen, CloudUpload, ChevronRight, Columns3, Ellipsis, 
 import { DeepReader } from './DeepReader'
 import { ModelSettings, type Connection } from './ModelSettings'
 import { disciplineLabel, fieldIcon, fields, normalizeField, type Field, type Paper, type Related, type Project } from './papers'
-import { history, recallConnection, recallStyle, rememberConnection, rememberPaper, rememberStyle, removeHistory, renameHistory } from './storage'
+import { history, loadReading, recallConnection, recallStyle, rememberConnection, rememberPaper, rememberStyle, removeHistory, renameHistory } from './storage'
 import { LiteratureMap, MethodTable } from './Literature'
 import { PdfOriginal, TextOriginal, WordOriginal } from './Original'
 import { api, ChatHome, WorkspaceDialogs, type User } from './Workspace'
 import { fileDrop } from './drop'
 import { StudyLibrary } from './StudyLibrary'
 import { DisciplineSelect, Preferences, type SettingsTab } from './Preferences'
-import { readingSections } from './sections'
+import { readerSections, readingSections } from './sections'
 import { applyTheme, readTheme, type Theme } from './theme'
 import { modelFetch, modelStatus } from './modelStatus'
+import { createConversation, listConversations, removeConversation, renameConversation, saveConversation, type Conversation } from './conversations'
 
 const tabs = [['read', '全文精读', BookOpen], ['compare', '方法对比', Columns3], ['graph', '论文关系', Network], ['source', '文段', FileText]] as const
 type Tab = typeof tabs[number][0]
@@ -46,7 +47,12 @@ function WorkspaceApp({ user, onUser }: { user: User | null; onUser: (user: User
   }
   const dark = theme === 'dark' || theme === 'system' && systemDark
   const owner = user?.id ?? ''
-  const [conversation, setConversation] = useState(0)
+  const [conversation, setConversation] = useState(() => createConversation(owner))
+  const [conversations, setConversations] = useState<Conversation[]>([])
+  const [showChat, setShowChat] = useState(true)
+  const [recentProgress, setRecentProgress] = useState('')
+  const conversationDialog = useRef<HTMLDialogElement>(null)
+  const [conversationAction, setConversationAction] = useState<{ item: Conversation; action: 'rename' | 'delete' }>()
   const [view, setView] = useState<'workspace' | 'library'>('workspace')
   const [libraryTab, setLibraryTab] = useState<'mine' | 'preset'>('preset')
   const [projects, setProjects] = useState<Project[]>([])
@@ -107,6 +113,25 @@ function WorkspaceApp({ user, onUser }: { user: User | null; onUser: (user: User
   const [importBusy, setImportBusy] = useState(false)
   const [importError, setImportError] = useState('')
   const request = useRef<AbortController | null>(null)
+  useEffect(() => {
+    let active = true
+    void listConversations(owner).then((items) => {
+      if (active) setConversations((current) => [...current, ...items.filter((item) => !current.some(({ id }) => id === item.id))])
+    }).catch(() => { if (active) setStorageMessage('暂时无法读取已保存的对话。') })
+    return () => { active = false }
+  }, [owner])
+  useEffect(() => {
+    const latest = library[0]
+    setRecentProgress('')
+    if (!latest) return
+    let active = true
+    const sections = readerSections(latest.blocks).filter((part) => !part.kind)
+    void loadReading<{ completed?: number; lessons?: Record<string, unknown> }>(latest.id, owner).then((state) => {
+      const done = state?.completed ?? sections.filter((part) => part.batches.every(([block]) => state?.lessons?.[block.id])).length
+      if (active) setRecentProgress(`已读 ${done}/${sections.length} 节`)
+    }).catch(() => {})
+    return () => { active = false }
+  }, [owner, library, showChat])
 
   useEffect(() => { json<{ live: boolean; model: string }>('/api/config').then((info) => setFallback(info.live ? info.model : '')).catch(() => {}) }, [])
   useEffect(() => {
@@ -134,6 +159,7 @@ function WorkspaceApp({ user, onUser }: { user: User | null; onUser: (user: User
 
   function choose(next: Paper) {
     setView('workspace')
+    setShowChat(false)
     if (paper?.id === next.id && paper.discipline === next.discipline && paper.field === next.field) return
     setProject((current) => current?.id === next.projectId ? current : projects.find((item) => item.id === next.projectId))
     request.current?.abort()
@@ -152,6 +178,7 @@ function WorkspaceApp({ user, onUser }: { user: User | null; onUser: (user: User
   function resetPaper() {
     request.current?.abort()
     setPaper(undefined)
+    setShowChat(true)
     setImportError('')
   }
 
@@ -179,9 +206,52 @@ function WorkspaceApp({ user, onUser }: { user: User | null; onUser: (user: User
   }
 
   function selectProject(next: Project | undefined) {
-    resetPaper()
+    request.current?.abort()
+    setShowChat(true)
     setProject(next)
+    setConversation(createConversation(owner, next?.id))
     setView('workspace')
+  }
+
+  function openConversation(item: Conversation) {
+    request.current?.abort()
+    setProject(projects.find(({ id }) => id === item.projectId))
+    setConversation(item)
+    setShowChat(true)
+    setView('workspace')
+  }
+
+  function newConversation() {
+    openConversation(createConversation(owner, project?.id))
+  }
+
+  async function updateConversation(next: Conversation) {
+    if (!next.turns.length) return
+    await saveConversation(next, owner)
+    setConversation((current) => current.id === next.id ? next : current)
+    setConversations((items) => [next, ...items.filter(({ id }) => id !== next.id)])
+  }
+
+  async function editConversation(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!conversationAction || historyBusy) return
+    const { item, action } = conversationAction
+    const title = String(new FormData(event.currentTarget).get('title') || '').trim()
+    if (action === 'rename' && !title) return
+    setHistoryBusy(true)
+    try {
+      if (action === 'rename') {
+        await renameConversation(item.id, title, owner)
+        setConversations((items) => items.map((entry) => entry.id === item.id ? { ...entry, title } : entry))
+        setConversation((current) => current.id === item.id ? { ...current, title } : current)
+      } else {
+        await removeConversation(item.id, owner)
+        setConversations((items) => items.filter(({ id }) => id !== item.id))
+        if (conversation.id === item.id) newConversation()
+      }
+      conversationDialog.current?.close()
+    } catch { setStorageMessage('未能更新对话，请重试。') }
+    finally { setHistoryBusy(false) }
   }
 
   function openImport(selected?: File) {
@@ -271,6 +341,8 @@ function WorkspaceApp({ user, onUser }: { user: User | null; onUser: (user: User
 
   const current = paper?.blocks.find((block) => block.id === source) ?? paper?.blocks[0]
   const list = project ? library.filter((item) => item.projectId === project.id) : library
+  const recent = list[0]
+  const visibleConversations = project ? conversations.filter((item) => item.projectId === project.id) : conversations
   const sameField = library.filter((item) => item.field === paper?.field && item.id !== paper?.id)
 
   return <>
@@ -293,10 +365,20 @@ function WorkspaceApp({ user, onUser }: { user: User | null; onUser: (user: User
     }} />
     <div className="desktop-workspace">
       <aside className="workspace-sidebar" aria-label="论文库和项目" {...fileDrop(openImport)}>
-        <button className="sidebar-new" onClick={() => { resetPaper(); setConversation((id) => id + 1); setView('workspace') }}><Plus size={17} /> 新对话</button>
+        <button className="sidebar-new" onClick={newConversation}><Plus size={17} /> 新对话</button>
         <div className="sidebar-heading"><span>项目</span><button aria-label="新建项目" onClick={() => (user ? projectDialog : account).current?.showModal()}><Plus size={15} /></button></div>
         {project && <button className="sidebar-row" onClick={() => selectProject(undefined)}><Folder size={15} /> 全部论文</button>}
         {projects.map((item) => { const Icon = fieldIcon[item.field]; return <button className="sidebar-row" aria-current={item.id === project?.id ? 'true' : undefined} onClick={() => selectProject(item)} key={item.id}><Icon size={15} role="img" aria-label={fields[item.field] + '项目'} /><span>{item.title}</span><small>{disciplineLabel(item.field, item.discipline)}</small></button> })}
+        <div className="sidebar-heading"><span>对话</span></div>
+        {visibleConversations.length ? <div className="sidebar-list conversation-list">{visibleConversations.map((item) => <div className="history-row" key={item.id}>
+          <button className="sidebar-row" title={item.title} aria-current={showChat && view === 'workspace' && conversation.id === item.id ? 'true' : undefined} onClick={() => openConversation(item)}><span>{item.title}</span></button>
+          <details className="history-menu"><summary aria-label={'管理对话 ' + item.title}><Ellipsis size={16} /></summary><div>
+            {(['rename', 'delete'] as const).map((action) => <button key={action} onClick={(event) => {
+              event.currentTarget.closest('details')?.removeAttribute('open')
+              setConversationAction({ item, action }); conversationDialog.current?.showModal()
+            }}>{action === 'rename' ? '重命名' : '删除'}</button>)}
+          </div></details>
+        </div>)}</div> : <p className="sidebar-empty">暂无对话</p>}
         <div className="sidebar-heading"><span>论文库</span><button aria-label="粘贴或导入论文" onClick={() => openImport()}><Plus size={15} /></button></div>
         <button className="sidebar-drop" disabled={importBusy} onClick={() => dropInput.current?.click()}><CloudUpload size={19} /> {importBusy ? '正在读取论文…' : '拖入或点击上传'}</button>
         <div className="sidebar-heading"><span>阅读历史</span></div>
@@ -317,12 +399,11 @@ function WorkspaceApp({ user, onUser }: { user: User | null; onUser: (user: User
       {importError && <p className="storage-message warning" role="alert">{importError}</p>}
       {modelIssue && view === 'workspace' && <p className="storage-message warning" role="status">{modelIssue}</p>}
       {view === 'library' ? <StudyLibrary openPaper={choose} saved={library} owner={owner} tab={libraryTab} onTab={setLibraryTab} onUpload={() => dropInput.current?.click()}
-          onRemove={(item) => { setHistoryAction({ item, action: 'delete' }); historyDialog.current?.showModal() }} /> : !paper || !current ?
-        <ChatHome key={project?.id + ':' + conversation} field={project?.field || 'custom'} discipline={project?.discipline} project={project} style={style}
+          onRemove={(item) => { setHistoryAction({ item, action: 'delete' }); historyDialog.current?.showModal() }} /> : showChat || !paper || !current ?
+        <ChatHome key={conversation.id} conversation={conversation} onChange={updateConversation} field={project?.field || 'custom'} discipline={project?.discipline} project={project} style={style}
           connection={connection} model={activeModel} openSettings={openSettings}
-          openImport={() => dropInput.current?.click()} openLibrary={() => { setLibraryTab('preset'); setView('library') }} upload={openImport} importBusy={importBusy} openRecent={(next) => {
-            if (list[0]) { choose(list[0]); setTab(next) } else setView('library')
-          }} /> : <div className={`shell reader-shell ${tab === 'read' ? 'reader-deep' : ''}`}>
+          openImport={() => dropInput.current?.click()} openLibrary={(tab) => { setLibraryTab(tab); setView('library') }} upload={openImport} importBusy={importBusy}
+          recent={recent} recentProgress={recent?.id === library[0]?.id ? recentProgress : ''} openRecent={() => { if (recent) { choose(recent); setTab('read') } }} newConversation={newConversation} /> : <div className={`shell reader-shell ${tab === 'read' ? 'reader-deep' : ''}`}>
       <main>
         <div className="paper-header"><div className="paper-meta"><span className={`field-tag ${paper.field}`}>{disciplineLabel(paper.field, paper.discipline)}</span><span>{paper.format || `${paper.venue} · ${paper.year}`}</span></div>
           <h1>{paper.title}</h1>
@@ -388,6 +469,14 @@ function WorkspaceApp({ user, onUser }: { user: User | null; onUser: (user: User
           : <p>删除「{historyAction.item.historyTitle || historyAction.item.short}」及其本地阅读进度？</p>}
         <div className="form-actions"><button type="button" disabled={historyBusy} onClick={() => historyDialog.current?.close()}>取消</button>
           <button className="primary" disabled={historyBusy}>{historyAction.action === 'rename' ? '保存名称' : '确认删除'}</button></div>
+      </form>}
+    </dialog>
+    <dialog ref={conversationDialog} onClose={() => setConversationAction(undefined)}>
+      {conversationAction && <form onSubmit={(event) => void editConversation(event)}>
+        <h2>{conversationAction.action === 'rename' ? '重命名对话' : '删除对话'}</h2>
+        {conversationAction.action === 'rename' ? <label>对话名称<input required name="title" maxLength={100} defaultValue={conversationAction.item.title} /></label> : <p>删除「{conversationAction.item.title}」这条对话？</p>}
+        <div className="form-actions"><button type="button" disabled={historyBusy} onClick={() => conversationDialog.current?.close()}>取消</button>
+          <button className="primary" disabled={historyBusy}>{conversationAction.action === 'rename' ? '保存名称' : '确认删除'}</button></div>
       </form>}
     </dialog>
     <WorkspaceDialogs user={user} onUser={onUser} account={account} project={projectDialog} onProject={(next) => {

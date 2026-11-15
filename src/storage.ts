@@ -9,19 +9,25 @@ function db(owner: string) {
   const existing = databases.get(owner)
   if (existing) return existing
   const pending = new Promise<IDBDatabase>((resolve, reject) => {
-    const request = indexedDB.open(owner ? 'paper-atlas-' + owner : 'paper-atlas', 1)
-    request.onupgradeneeded = () => {
-      request.result.createObjectStore('papers', { keyPath: 'paper.id' })
-      request.result.createObjectStore('reading')
+    const request = indexedDB.open(owner ? 'paper-atlas-' + owner : 'paper-atlas', 2)
+    request.onupgradeneeded = (event) => {
+      if (event.oldVersion === 0) {
+        request.result.createObjectStore('papers', { keyPath: 'paper.id' })
+        request.result.createObjectStore('reading')
+      }
+      request.result.createObjectStore('conversations', { keyPath: 'id' })
     }
-    request.onsuccess = () => resolve(request.result)
+    request.onsuccess = () => {
+      request.result.onversionchange = () => { request.result.close(); databases.delete(owner) }
+      resolve(request.result)
+    }
     request.onerror = () => { databases.delete(owner); reject(request.error) }
   })
   databases.set(owner, pending)
   return pending
 }
 
-async function transaction<T>(owner: string, store: string, mode: IDBTransactionMode, action: (store: IDBObjectStore) => IDBRequest<T>) {
+export async function transaction<T>(owner: string, store: string, mode: IDBTransactionMode, action: (store: IDBObjectStore) => IDBRequest<T>) {
   const database = await db(owner)
   return new Promise<T>((resolve, reject) => {
     const tx = database.transaction(store, mode)

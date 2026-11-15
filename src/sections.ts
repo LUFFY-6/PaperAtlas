@@ -1,6 +1,6 @@
 import type { Block } from './papers.ts'
 
-export type ReadingSection = { id: string; title: string; blocks: Block[] }
+export type ReadingSection = { id: string; title: string; blocks: Block[]; kind?: 'frontmatter' }
 
 const standardHeading = /^(?:abstract|摘要|introduction|引言|background|背景|related work|相关工作|materials and methods|methods?|方法|methodology|研究方法|(?:experimental )?results?|实验结果|结果|experiments?|实验|evaluation|评估|discussion|讨论|conclusions?|结论|limitations|局限性?|references|参考文献|appendix(?:\s+[a-z])?|附录)[：:．.]?$/iu
 const numberedHeading = /^(?:\d+(?:[.．]\d+)+(?:[.．、]\s*|\s+)|\d+[.．]\s*)(\p{L}[^.!?。！？←→=]{1,90})$/u
@@ -59,4 +59,35 @@ export function readingBatches(blocks: Block[]): Block[][] {
     size += block.text.length
   }
   return batches.filter((batch) => batch.some(({ text }) => text.trim().length >= 8))
+}
+
+export function readerSections(blocks: Block[]) {
+  const sections = readingSections(blocks).map((section, index) => {
+    const text = section.blocks.map((block) => block.text).join('\n')
+    const preface = index === 0 && section.title === '篇首'
+    const firstPages = section.blocks.every(({ title }) => /^PDF 第 [12] 页$/.test(title))
+    const metadata = /arxiv:|provided proper attribution|copyright|©|all rights reserved|\blicense\b|permission to make digital/i.test(text)
+      || text.split('\n').filter((line) => /@|university|institute|department|school of/i.test(line)).length >= 3
+    const frontmatter = preface && (metadata || firstPages && text.trim().length < 120)
+    return { ...section, kind: frontmatter ? 'frontmatter' as const : undefined,
+      batches: frontmatter ? [] : readingBatches(section.blocks), sourceIds: [section.id] }
+  })
+  for (let i = 0; i < sections.length;) {
+    const section = sections[i]
+    if (section.kind || section.blocks.reduce((size, { text }) => size + text.trim().length, 0) >= 200) { i++; continue }
+    const previous = sections[i - 1]
+    const next = sections[i + 1]
+    if (previous && !previous.kind) {
+      previous.blocks.push(...section.blocks)
+      previous.batches.push(...section.batches)
+      previous.sourceIds.push(...section.sourceIds)
+      sections.splice(i, 1)
+    } else if (next && !next.kind) {
+      next.blocks.unshift(...section.blocks)
+      next.batches.unshift(...section.batches)
+      next.sourceIds.unshift(...section.sourceIds)
+      sections.splice(i, 1)
+    } else i++
+  }
+  return sections
 }

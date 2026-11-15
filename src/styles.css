@@ -485,3 +485,5 @@ html[data-theme="dark"] :is(.pdf-original[data-tint=true] canvas, .word-original
 .model-panel label.remember-model { display: flex; gap: 7px; align-items: center; }
 .study-library nav [aria-selected="true"] { color: var(--accent); background: var(--accent-soft); }
 .library-venue { display: block; color: var(--text-muted); font-size: 11px; }
+.chat-recent { margin-top: 8px; text-align: center; }
+.conversation-list { flex: 0 1 auto; max-height: 180px; }

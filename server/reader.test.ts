@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { normalizeDoi, verifiedExplanation } from './reader.ts'
-import { readingBatches, readingSections } from '../src/sections.ts'
+import { readerSections, readingBatches, readingSections } from '../src/sections.ts'
+import { locateQuote } from '../src/evidence.ts'
 import { fileDrop } from '../src/drop.ts'
 import { discover } from './discovery.ts'
 import type { DragEvent } from 'react'
@@ -69,6 +70,27 @@ test('retains PDF table markers in the source without making them headings or st
   assert.deepEqual(sections.map(({ title }) => title), ['Introduction'])
   assert.match(sections[0].blocks[0].text, /# \*\nThis table/)
   assert.equal(readingBatches([{ id: '2', title: 'PDF 第 2 页', text: '# *' }]).length, 0)
+})
+
+test('hides frontmatter from generation and merges short sections without changing source or lesson IDs', () => {
+  const blocks = [{ id: '1', title: 'PDF 第 1 页', text: 'arXiv:1234\nCopyright text\n\n1. 引言\n' + '研究问题。'.repeat(60) + '\n2. 补充\n很短的一节。' }]
+  const original = readingSections(blocks)
+  const displayed = readerSections(blocks)
+  assert.equal(displayed[0].kind, 'frontmatter')
+  assert.deepEqual(displayed[0].batches, [])
+  assert.deepEqual(displayed[1].blocks.map(({ id }) => id), original.slice(1).flatMap(({ blocks }) => blocks.map(({ id }) => id)))
+  assert.deepEqual(displayed[1].batches.map(([block]) => block.id), original.slice(1).flatMap(({ blocks }) => readingBatches(blocks).map(([block]) => block.id)))
+})
+
+test('locates cross-page quotes and respects a verified source ID when a quote repeats', () => {
+  const paper = { id: 'p', title: 'Sample', short: 'Sample', field: 'science' as const, author: '', year: '', venue: '', blocks: [
+    { id: '1', title: 'PDF 第 1 页', text: 'Common phrase, followed by the first half.' },
+    { id: '2', title: 'PDF 第 2 页', text: 'The conclusion comes here, then Common phrase.' },
+  ] }
+  assert.equal(locateQuote(paper, 'Common phrase', 0, '1-2')?.page, 2)
+  const match = locateQuote(paper, 'first half.\nThe conclusion')
+  assert.equal(match?.page, 1)
+  assert.equal(match?.text, 'firsthalf.')
 })
 
 test('labels citation directions from metadata and limits comparisons backed by title alone', async (t) => {

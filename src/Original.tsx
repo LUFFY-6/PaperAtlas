@@ -32,7 +32,7 @@ function matchQuote(container: HTMLElement, quote: string) {
   return range
 }
 
-export function PdfOriginal({ original, page, quote }: { original: Blob; page: number; quote?: string }) {
+export function PdfOriginal({ original, page: requestedPage, quote }: { original: Blob; page: number; quote?: string }) {
   const wrapper = useRef<HTMLDivElement>(null)
   const canvas = useRef<HTMLCanvasElement>(null)
   const layer = useRef<HTMLDivElement>(null)
@@ -42,6 +42,9 @@ export function PdfOriginal({ original, page, quote }: { original: Blob; page: n
   const [loadError, setLoadError] = useState(false)
   const [render, setRender] = useState<{ page: number; ok: boolean; scale: number; unit: number }>()
   const [marks, setMarks] = useState<CSSProperties[]>([])
+  const [near, setNear] = useState<{ source: number; quote: string; page?: number; dismissed?: boolean }>()
+  const search = near?.source === requestedPage && near.quote === quote ? near : undefined
+  const page = search?.page ?? requestedPage
   useEffect(() => {
     const element = wrapper.current
     if (!element) return
@@ -85,20 +88,39 @@ export function PdfOriginal({ original, page, quote }: { original: Blob; page: n
   useEffect(() => {
     const element = layer.current
     const range = quote && element && render?.ok && render.page === page ? matchQuote(element, quote) : undefined
-    if (!range || !element) { setMarks([]); return }
+    if (!range || !element) {
+      setMarks([])
+      if (!render?.ok || render.page !== page || !quote || !pdf || search) return
+      let active = true
+      const wanted = quote.replace(/\s/gu, '')
+      void (async () => {
+        for (const adjacent of [requestedPage - 1, requestedPage + 1, requestedPage - 2, requestedPage + 2]) {
+          if (adjacent < 1 || adjacent > pdf.numPages) continue
+          const candidate = await (await pdf.getPage(adjacent)).getTextContent()
+          const text = candidate.items.map((item) => 'str' in item ? item.str : '').join('').replace(/\s/gu, '')
+          if (text.includes(wanted)) {
+            if (active) setNear({ source: requestedPage, quote, page: adjacent })
+            return
+          }
+        }
+        if (active) setNear({ source: requestedPage, quote })
+      })().catch(() => { if (active) setNear({ source: requestedPage, quote }) })
+      return () => { active = false }
+    }
     const box = element.getBoundingClientRect()
     const next = Array.from(range.getClientRects()).filter((rect) => rect.width && rect.height).map((rect) => ({
       left: rect.left - box.left, top: rect.top - box.top, width: rect.width, height: rect.height,
     }))
     setMarks(next)
     if (next.length) range.startContainer.parentElement?.scrollIntoView({ block: 'nearest' })
-  }, [page, quote, render])
+  }, [page, quote, render, pdf, requestedPage, search])
   const error = loadError || render?.page === page && !render.ok
   return <div className="pdf-original" ref={wrapper} data-tint={tint}>
     <div className="original-tools" aria-label="纸张显示">
       <button className="secondary" aria-pressed={!tint} onClick={() => setTint(false)}>原色</button>
       <button className="secondary" aria-pressed={tint} onClick={() => setTint(true)}>护眼</button>
     </div>
+    {search && !search.dismissed && render?.page === page && !marks.length && <p className="warning" role="status">未能在此页高亮，引文来自第 {requestedPage} 页 <button onClick={() => setNear({ ...search, dismissed: true })}>关闭</button></p>}
     {error ? <p role="alert">原版暂时无法渲染，可打开原文件。</p> : render?.page !== page && <p role="status">正在渲染 PDF 第 {page} 页…</p>}
     <div className="pdf-surface" hidden={error || render?.page !== page} style={{
       '--scale-factor': render?.scale ?? 1, '--user-unit': render?.unit ?? 1,

@@ -3,7 +3,7 @@ import { ArrowUpRight, BookOpen, Trash2 } from 'lucide-react'
 import { catalog, studyFields, type StudyField, type StudyPaper } from './catalog'
 import { disciplineOptions, fieldIcon, fields, type Paper } from './papers'
 import { loadReading } from './storage'
-import { readingBatches, readingSections } from './sections'
+import { readerSections } from './sections'
 
 type LibraryTab = 'mine' | 'preset'
 
@@ -24,9 +24,9 @@ export function StudyLibrary({ openPaper, saved, owner, tab, onTab, onUpload, on
     if (tab !== 'mine') return
     let active = true
     void Promise.all(saved.filter((item) => !catalog.some(({ id }) => id === item.id)).map(async (item) => {
-      const sections = readingSections(item.blocks)
-      const state = await loadReading<{ lessons?: Record<string, unknown> }>(item.id, owner).catch(() => undefined)
-      const done = sections.filter(({ blocks }) => readingBatches(blocks).every(([block]) => Boolean(state?.lessons?.[block.id]))).length
+      const sections = readerSections(item.blocks).filter((section) => !section.kind)
+      const state = await loadReading<{ completed?: number; lessons?: Record<string, unknown> }>(item.id, owner).catch(() => undefined)
+      const done = state?.completed ?? sections.filter(({ batches }) => batches.every(([block]) => Boolean(state?.lessons?.[block.id]))).length
       return [item.id, `已精读 ${done}/${sections.length} 节`]
     })).then((entries) => { if (active) setProgress(Object.fromEntries(entries)) })
     return () => { active = false }

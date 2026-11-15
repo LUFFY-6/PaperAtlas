@@ -1,12 +1,13 @@
-import { useState, type FormEvent } from 'react'
-import { ArrowUp, BookOpen, Columns3, FileText, FolderPlus, Network, Paperclip, Plus } from 'lucide-react'
-import { disciplineLabel, disciplineOptions, fields, type Field, type Project, type ReadingStyle } from './papers'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { ArrowUp, BookOpen, FileText, FolderPlus, Paperclip, Plus } from 'lucide-react'
+import { disciplineLabel, disciplineOptions, fields, type Field, type Paper, type Project, type ReadingStyle } from './papers'
 import type { Connection } from './ModelSettings'
 import { fileDrop } from './drop'
 import { modelFetch } from './modelStatus'
+import type { Conversation } from './conversations'
 
 export type User = { id: string; name: string; displayName?: string; bio?: string }
-type Turn = { role: 'user' | 'assistant'; content: string }
+type Turn = Conversation['turns'][number]
 
 export async function api<T>(url: string, body?: unknown, signal?: AbortSignal): Promise<T> {
   const response = await modelFetch(url, body === undefined ? { signal } : {
@@ -17,35 +18,42 @@ export async function api<T>(url: string, body?: unknown, signal?: AbortSignal):
   return data
 }
 
-export function ChatHome({ field, discipline, style, connection, model, openSettings, openImport, openLibrary, upload, importBusy, project, openRecent }: {
+export function ChatHome({ field, discipline, style, connection, model, openSettings, openImport, openLibrary, upload, importBusy, project, openRecent, recent, recentProgress, newConversation, conversation, onChange }: {
   field: Field; discipline?: string; style: ReadingStyle; connection: Connection | null; model: string; openSettings: () => void;
-  openImport: () => void; openLibrary: () => void; upload: (file: File) => void; importBusy: boolean; project?: Project;
-  openRecent: (tab: 'read' | 'compare' | 'graph') => void
+  openImport: () => void; openLibrary: (tab: 'mine' | 'preset') => void; upload: (file: File) => void; importBusy: boolean; project?: Project;
+  openRecent: () => void; newConversation: () => void; recent?: Paper; recentProgress: string
+  conversation: Conversation; onChange: (conversation: Conversation) => Promise<void>
 }) {
-  const [turns, setTurns] = useState<Turn[]>([])
+  const [pending, setPending] = useState('')
+  const request = useRef<AbortController | null>(null)
+  useEffect(() => () => request.current?.abort(), [])
+  const turns: Turn[] = pending ? [...conversation.turns, { role: 'user', content: pending }] : conversation.turns
   const [draft, setDraft] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   async function send(event: FormEvent) {
     event.preventDefault()
-    if (busy || !draft.trim()) return
+    if (request.current || !draft.trim()) return
     if (!model) { openSettings(); return }
-    const next: Turn[] = [...turns, { role: 'user', content: draft.trim() }]
+    const question = draft.trim()
+    const next: Turn[] = [...conversation.turns, { role: 'user', content: question }]
+    const controller = new AbortController()
+    request.current = controller
     setError('')
     setDraft('')
-    setTurns(next)
+    setPending(question)
     setBusy(true)
     try {
-      const { reply } = await api<{ reply: string }>('/api/chat', {
+      const { reply, model: used } = await api<{ reply: string; model: string }>('/api/chat', {
         field, discipline: disciplineLabel(field, discipline), style, connection,
         turns: next.slice(-13).map((turn) => ({ ...turn, content: turn.content.slice(0, 1800) })),
-      })
-      setTurns([...next, { role: 'assistant', content: reply }])
+      }, controller.signal)
+      if (!controller.signal.aborted) await onChange({ ...conversation, turns: [...next, { role: 'assistant', content: reply }],
+        title: conversation.turns.length ? conversation.title : Array.from(question).slice(0, 30).join(''),
+        model: used, updatedAt: Date.now() })
     } catch (reason) {
-      setError((reason as Error).message)
-      setDraft(next.at(-1)?.content ?? '')
-      setTurns(turns)
-    } finally { setBusy(false) }
+      if (!controller.signal.aborted) { setError((reason as Error).message); setDraft(question) }
+    } finally { request.current = null; setBusy(false); setPending('') }
   }
   return <main className="chat-home" {...fileDrop(upload)}>
     <div className="chat-inner">
@@ -67,11 +75,12 @@ export function ChatHome({ field, discipline, style, connection, model, openSett
       </form>
       {error && <p className="warning" role="alert">{error}</p>}
       <div className="chat-shortcuts">
-        <button onClick={() => openRecent('read')}><FileText size={16} />原文精读</button>
-        <button onClick={() => openRecent('compare')}><Columns3 size={16} />方法对比</button>
-        <button onClick={() => openRecent('graph')}><Network size={16} />论文关系</button>
-        <button onClick={openLibrary}><BookOpen size={16} />学习库</button>
+        <button disabled={!recent} aria-label="继续阅读" aria-describedby="recent-paper" onClick={openRecent}><FileText size={16} />继续阅读</button>
+        <button aria-label="我的论文" onClick={() => openLibrary('mine')}><BookOpen size={16} />我的论文</button>
+        <button aria-label="学习库" onClick={() => openLibrary('preset')}><BookOpen size={16} />学习库</button>
+        <button aria-label="新建对话" onClick={newConversation}><Plus size={16} />新建对话</button>
       </div>
+      <p className="subtle chat-recent" id="recent-paper">{recent ? `${recent.historyTitle || recent.title}${recentProgress ? ' · ' + recentProgress : ''}` : '先上传第一篇论文'}</p>
     </div>
   </main>
 }

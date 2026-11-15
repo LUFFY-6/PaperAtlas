@@ -3,7 +3,8 @@ import { modelFetch } from './modelStatus'
 import { ArrowLeft, ArrowRight, ArrowUpRight, BookOpen, Check, Circle, List, Sparkles } from 'lucide-react'
 import type { Connection } from './ModelSettings'
 import { disciplineLabel, readingStyles, type Paper, type ReadingStyle } from './papers'
-import { readingBatches, readingSections } from './sections'
+import { readerSections, readingSections } from './sections'
+import { locateQuote } from './evidence'
 import { PdfOriginal, TextOriginal, WordOriginal } from './Original'
 import { loadReading, saveReading } from './storage'
 import { api } from './Workspace'
@@ -12,9 +13,7 @@ import { reviewBlocks, type Explanation, type Lesson, type PreparedReading } fro
 export function DeepReader({ paper, model, connection, openSettings, owner, style }: {
   paper: Paper; owner: string; model: string; connection: Connection | null; openSettings: () => void; style: ReadingStyle
 }) {
-  const [sections] = useState(() => readingSections(paper.blocks).map((section) => ({
-    ...section, batches: readingBatches(section.blocks),
-  })))
+  const [sections] = useState(() => readerSections(paper.blocks))
   const [index, setIndex] = useState(0)
   const [lessons, setLessons] = useState<Record<string, Lesson>>({})
   const [prepared, setPrepared] = useState<PreparedReading>()
@@ -24,6 +23,7 @@ export function DeepReader({ paper, model, connection, openSettings, owner, styl
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [working, setWorking] = useState('')
   const [evidence, setEvidence] = useState<Lesson['evidence'][number]>()
+  const [locateError, setLocateError] = useState('')
   const [ready, setReady] = useState(false)
   const [storageError, setStorageError] = useState(false)
   const [textView, setTextView] = useState(false)
@@ -48,7 +48,8 @@ export function DeepReader({ paper, model, connection, openSettings, owner, styl
   const originalFormat = !!paper.original && ['PDF', 'DOCX', 'MD', 'TXT'].includes(paper.format ?? '')
   const sectionAnchor = section.blocks[0]?.text.slice(0, 60)
   const isComplete = (item: typeof section) => item.batches.every(([first]) => currentLessons[first.id])
-  const completed = sections.filter(isComplete).length
+  const countable = sections.filter((item) => !item.kind)
+  const completed = countable.filter(isComplete).length
   const hasLessons = Object.keys(currentLessons).length > 0
   const sectionError = section.batches.map(([first]) => errors[first.id]).find(Boolean)
 
@@ -56,9 +57,11 @@ export function DeepReader({ paper, model, connection, openSettings, owner, styl
   useEffect(() => { if (evidence) quote.current?.focus() }, [evidence])
   useEffect(() => {
     let alive = true
-    void loadReading<{ index: number; lessons: Record<string, Lesson>; review?: Explanation }>(paper.id, owner).then((saved) => {
+    void loadReading<{ index: number; sectionId?: string; lessons: Record<string, Lesson>; review?: Explanation }>(paper.id, owner).then((saved) => {
       if (alive && saved) {
-        setIndex(Math.min(Math.max(saved.index, 0), sections.length))
+        const legacy = readingSections(paper.blocks)
+        const id = saved.sectionId ?? (saved.index === legacy.length ? 'review' : legacy[saved.index]?.id)
+        setIndex(id === 'review' ? sections.length : Math.max(0, sections.findIndex((item) => id && item.sourceIds.includes(id))))
         setLessons(saved.lessons)
         setReview(saved.review)
       }
@@ -66,8 +69,8 @@ export function DeepReader({ paper, model, connection, openSettings, owner, styl
     return () => { alive = false }
   }, [paper.id, sections.length, owner])
   useEffect(() => {
-    if (ready) void saveReading(paper.id, { index, lessons, review }, owner).catch(() => setStorageError(true))
-  }, [ready, paper.id, index, lessons, review, owner])
+    if (ready) void saveReading(paper.id, { index, sectionId: showingReview ? 'review' : section.id, completed, total: countable.length, lessons, review }, owner).catch(() => setStorageError(true))
+  }, [ready, paper.id, index, lessons, review, owner, completed, countable.length, section.id, showingReview])
   useEffect(() => {
     if (!paper.url) return
     const controller = new AbortController()
@@ -95,6 +98,20 @@ export function DeepReader({ paper, model, connection, openSettings, owner, styl
     setPdfPage(undefined)
     setSelection('')
     setQuestionError('')
+    setLocateError('')
+  }
+
+  function jumpToQuote(text: string, preferredId?: string) {
+    const located = locateQuote(paper, text, showingReview ? undefined : index, preferredId)
+    if (!located) {
+      if (showingReview) select(Math.max(0, index - 1))
+      setLocateError('未能在原文中找到这条引文，请核对提取文本。')
+      return
+    }
+    select(located.sectionIndex)
+    setPdfPage(located.page ?? undefined)
+    setTextView(false)
+    setEvidence({ id: located.blockId, quote: located.text })
   }
 
   function captureSelection() {
@@ -190,29 +207,29 @@ export function DeepReader({ paper, model, connection, openSettings, owner, styl
 
   return <section className="deep-reader" aria-label="原文对照精读">
     <div className="reading-controls">
-      <div><strong>精读进度</strong><span>{completed} / {sections.length} 节</span>
-        <progress aria-label="精读进度" value={completed} max={sections.length} /></div>
+        <div><strong>精读进度</strong><span>{completed} / {countable.length} 节</span>
+        <progress aria-label="精读进度" value={completed} max={Math.max(1, countable.length)} /></div>
       <div className="reading-actions">
         {working || reviewing ? <button className="secondary" onClick={() => job.current?.abort()}>取消生成</button>
-          : completed === sections.length && currentReview ? <button className="secondary" disabled={showingReview} onClick={() => select(sections.length)}>
+          : completed === countable.length && currentReview ? <button className="secondary" disabled={showingReview} onClick={() => select(sections.length)}>
             <Sparkles size={16} /> 查看全文回顾
           </button>
-          : model ? <button className="primary" disabled={!ready} onClick={() => void generate(sections, true)}>
-            <Sparkles size={16} />{completed === sections.length ? '生成全文回顾' : hasLessons ? '继续精读' : '生成全文讲解'}
-          </button> : completed < sections.length && <button className="primary" onClick={openSettings}>连接模型</button>}
+          : model ? <button className="primary" disabled={!ready} onClick={() => void generate(countable, true)}>
+            <Sparkles size={16} />{completed === countable.length ? '生成全文回顾' : hasLessons ? '继续精读' : '生成全文讲解'}
+          </button> : completed < countable.length && <button className="primary" onClick={openSettings}>连接模型</button>}
       </div>
     </div>
     {storageError && <p className="warning" role="status">阅读进度可能未保存，请检查浏览器存储。</p>}
     <div className="reading-status" aria-live="polite">
       {reviewing ? '正在整理全文回顾…' : working ? <><span className="reading-spinner" aria-hidden="true" /> 正在讲解 {sections.find((item) => item.id === working)?.title}</>
-        : completed === sections.length ? '全部可提取章节已完成。' : prepared ? '已有的学习库讲解可直接阅读。'
+        : completed === countable.length ? '全部可提取章节已完成。' : prepared ? '已有的学习库讲解可直接阅读。'
           : model ? `开始生成后，${model} 将逐节收到论文文字。` : '连接后即可生成精读讲解。'}
     </div>
     <div className="reading-grid">
       <nav className="reading-outline" aria-label="章节目录">
         <h2><List size={16} /> 章节目录</h2>
         {sections.map((item, i) => <button key={item.id} aria-current={index === i ? 'step' : undefined} onClick={() => select(i)}>
-          {isComplete(item) ? <Check size={14} aria-label="已完成" /> : <Circle size={11} aria-hidden="true" />}
+          {item.kind ? <small className="subtle">题录</small> : isComplete(item) ? <Check size={14} aria-label="已完成" /> : <Circle size={11} aria-hidden="true" />}
           <span>{item.title}</span>
         </button>)}
         <button aria-current={showingReview ? 'step' : undefined} onClick={() => select(sections.length)}><Sparkles size={14} /> 全文回顾</button>
@@ -221,14 +238,7 @@ export function DeepReader({ paper, model, connection, openSettings, owner, styl
         {currentReview && <div className="chat-bubble assistant lesson-bubble"><dl>
           {([['全文主线', currentReview.explanation], ['局限与研究痛点', currentReview.limits], ['研究想法与验证', currentReview.example]] as const)
             .map(([label, text]) => <div key={label}><dt>{label}</dt><dd>{text}</dd></div>)}
-          </dl><div className="quote-links" aria-label="回顾引文">{currentReview.evidence.map((ref, i) => <button key={i} onClick={() => {
-            const target = sections.findIndex((item) => item.blocks.some(({ id }) => id === ref.id))
-            if (target < 0) return
-            select(target)
-            const block = sections[target].blocks.find(({ id }) => id === ref.id)
-            setPdfPage(Number(block?.title.match(/^PDF 第 (\d+) 页$/)?.[1]) || undefined)
-            setTextView(false); setEvidence(ref)
-          }}>定位引文 {i + 1}</button>)}</div></div>}
+          </dl><div className="quote-links" aria-label="回顾引文">{currentReview.evidence.map((ref, i) => <button key={i} onClick={() => jumpToQuote(ref.quote, ref.id)}>定位引文 {i + 1}</button>)}</div></div>}
         {reviewError && <p className="warning" role="alert">{reviewError}</p>}
         {!currentReview && <p className="subtle">回顾会综合按章节取样的原文和已有讲解，区分论文结论与待验证的想法。</p>}
         {model ? <button className="secondary" disabled={!!working || reviewing || !ready} onClick={() => {
@@ -243,6 +253,7 @@ export function DeepReader({ paper, model, connection, openSettings, owner, styl
         <div className="reading-pair">
           <article className="reading-original" ref={originalPanel} onMouseUp={captureSelection} onKeyUp={captureSelection}>
             <h3><BookOpen size={16} /> 原文</h3>
+            {locateError && <p className="warning" role="status">{locateError} <button onClick={() => setLocateError('')}>关闭</button></p>}
             {originalFormat && <div className="original-tools">
               <button className="secondary" aria-pressed={!textView} onClick={() => { setTextView(false); setEvidence(undefined) }}>原版</button>
               <button className="secondary" aria-pressed={textView} onClick={() => setTextView(true)}>引用文本</button>
@@ -275,20 +286,16 @@ export function DeepReader({ paper, model, connection, openSettings, owner, styl
                 ['为什么这么做', lesson.why], ['作者是怎么做的', lesson.explanation], ['本节结果与作用', lesson.result],
                 ['举例或推演', lesson.example], ['证据边界', lesson.limits],
               ] as const).map(([title, text]) => <div key={title}><dt>{title}</dt><dd>{text}</dd></div>)}</dl>
-              <div className="quote-links" aria-label="原文引文">{lesson.evidence.map((ref, i) => <button key={i} onClick={() => {
-                const cited = section.blocks.find((block) => block.id === ref.id)
-                setPdfPage(Number(cited?.title.match(/^PDF 第 (\d+) 页$/)?.[1]) || undefined)
-                setTextView(false)
-                setEvidence({ ...ref })
-              }}>定位引文 {i + 1}</button>)}</div>
+              <div className="quote-links" aria-label="原文引文">{lesson.evidence.map((ref, i) => <button key={i} onClick={() => jumpToQuote(ref.quote, ref.id)}>定位引文 {i + 1}</button>)}</div>
               </div>
             })}
             {followups.filter((item) => item.section === section.id).map((item, i) => <div className="selection-thread" key={i}>
-              <div className="chat-bubble user"><small>你划选了</small><p>{item.quote}</p></div>
+              <div className="chat-bubble user"><small>你划选了</small><p>{item.quote}</p><button className="text-button" onClick={() => jumpToQuote(item.quote)}>定位原文</button></div>
               <div className="chat-bubble assistant"><small>Paper Atlas</small><p>{item.reply}</p></div>
             </div>)}
             {questionError && <p role="alert" className="warning">{questionError}</p>}
-            {isComplete(section) && model && <button className="secondary" disabled={!!working || reviewing} onClick={() => void generate([section], false, true)}>按{readingStyles[style]}风格重新讲解</button>}
+            {section.kind && <p className="subtle">本节为作者、题录或版权信息。</p>}
+            {!section.kind && isComplete(section) && model && <button className="secondary" disabled={!!working || reviewing} onClick={() => void generate([section], false, true)}>按{readingStyles[style]}风格重新讲解</button>}
             {!isComplete(section) && <div className="lesson-empty">
               <p>{working === section.id ? '正在阅读本节并核对引文。' : '生成后会在原文旁显示本节的动机、做法和结果。'}</p>
               {model && <button className="secondary" disabled={!ready || !!working || reviewing} onClick={() => void generate([section])}>
