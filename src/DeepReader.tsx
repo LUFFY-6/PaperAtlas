@@ -10,8 +10,10 @@ import { loadReading, saveReading } from './storage'
 import { api } from './Workspace'
 import { reviewBlocks, type Explanation, type Lesson, type PreparedReading } from './lessons'
 
-export function DeepReader({ paper, model, connection, openSettings, owner, style }: {
-  paper: Paper; owner: string; model: string; connection: Connection | null; openSettings: () => void; style: ReadingStyle
+type Thread = { id: string; sectionId: string; scope: 'section' | 'paper'; question: string; answer: string; quote?: string; at: number; model?: string }
+
+export function DeepReader({ paper, model, connection, openSettings, owner, style, onSection, visible }: {
+  paper: Paper; owner: string; model: string; connection: Connection | null; openSettings: () => void; style: ReadingStyle; onSection: (id: string) => void; visible: boolean
 }) {
   const [sections] = useState(() => readerSections(paper.blocks))
   const [index, setIndex] = useState(0)
@@ -28,7 +30,11 @@ export function DeepReader({ paper, model, connection, openSettings, owner, styl
   const [storageError, setStorageError] = useState(false)
   const [textView, setTextView] = useState(false)
   const [selection, setSelection] = useState('')
-  const [followups, setFollowups] = useState<{ quote: string; reply: string; section: string }[]>([])
+  const [threads, setThreads] = useState<Thread[]>([])
+  const [question, setQuestion] = useState('')
+  const [scope, setScope] = useState<'section' | 'paper'>('section')
+  const [retry, setRetry] = useState<{ question: string; quote?: string; scope: 'section' | 'paper' }>()
+  const questionInput = useRef<HTMLTextAreaElement>(null)
   const [asking, setAsking] = useState(false)
   const [questionError, setQuestionError] = useState('')
   const followup = useRef<AbortController | null>(null)
@@ -54,23 +60,26 @@ export function DeepReader({ paper, model, connection, openSettings, owner, styl
   const sectionError = section.batches.map(([first]) => errors[first.id]).find(Boolean)
 
   useEffect(() => () => { job.current?.abort(); followup.current?.abort() }, [connection, model, style])
+  useEffect(() => { if (!visible) followup.current?.abort() }, [visible])
+  useEffect(() => { onSection(section.id) }, [onSection, section.id])
   useEffect(() => { if (evidence) quote.current?.focus() }, [evidence])
   useEffect(() => {
     let alive = true
-    void loadReading<{ index: number; sectionId?: string; lessons: Record<string, Lesson>; review?: Explanation }>(paper.id, owner).then((saved) => {
+    void loadReading<{ index: number; sectionId?: string; lessons: Record<string, Lesson>; review?: Explanation; threads?: Thread[] }>(paper.id, owner).then((saved) => {
       if (alive && saved) {
         const legacy = readingSections(paper.blocks)
         const id = saved.sectionId ?? (saved.index === legacy.length ? 'review' : legacy[saved.index]?.id)
         setIndex(id === 'review' ? sections.length : Math.max(0, sections.findIndex((item) => id && item.sourceIds.includes(id))))
         setLessons(saved.lessons)
         setReview(saved.review)
+        setThreads(saved.threads?.slice(-50) ?? [])
       }
     }).catch(() => { if (alive) setStorageError(true) }).finally(() => { if (alive) setReady(true) })
     return () => { alive = false }
   }, [paper.id, sections.length, owner])
   useEffect(() => {
-    if (ready) void saveReading(paper.id, { index, sectionId: showingReview ? 'review' : section.id, completed, total: countable.length, lessons, review }, owner).catch(() => setStorageError(true))
-  }, [ready, paper.id, index, lessons, review, owner, completed, countable.length, section.id, showingReview])
+    if (ready) void saveReading(paper.id, { index, sectionId: showingReview ? 'review' : section.id, completed, total: countable.length, lessons, review, threads }, owner).catch(() => setStorageError(true))
+  }, [ready, paper.id, index, lessons, review, owner, completed, countable.length, section.id, showingReview, threads])
   useEffect(() => {
     if (!paper.url) return
     const controller = new AbortController()
@@ -93,6 +102,11 @@ export function DeepReader({ paper, model, connection, openSettings, owner, styl
   }, [paper.id, paper.url, sections])
 
   function select(next: number) {
+    followup.current?.abort()
+    followup.current = null
+    setAsking(false)
+    setQuestion('')
+    setRetry(undefined)
     setIndex(next)
     setEvidence(undefined)
     setPdfPage(undefined)
@@ -121,23 +135,38 @@ export function DeepReader({ paper, model, connection, openSettings, owner, styl
     setSelection(selected.toString().trim().slice(0, 2200))
   }
 
-  async function askSelection() {
-    if (!selection || asking) return
+  async function ask(value: string, selected?: string, targetScope = scope) {
+    const trimmed = value.trim()
+    if (!trimmed || followup.current || !ready) return
     if (!model) { openSettings(); return }
     const controller = new AbortController()
     followup.current = controller
     setAsking(true)
     setQuestionError('')
+    setRetry(undefined)
     try {
-      const { reply } = await api<{ reply: string }>('/api/chat', {
+      const previous = sections[index - 1]?.batches.map(([block]) => currentLessons[block.id]?.result ?? '').join('\n').slice(0, 500)
+      const related = threads.filter((item) => item.sectionId === section.id && item.scope === targetScope)
+      const { reply, model: used } = await api<{ reply: string; model: string }>('/api/chat', {
         field: paper.field, discipline: disciplineLabel(paper.field, paper.discipline), style, connection,
-        turns: [{ role: 'user', content: '请详细讲解划选内容，说明它的含义、作者为何采用这个做法及其作用。有帮助时举一个具体的例子。论文资料：' +
-          JSON.stringify({ title: paper.title, section: section.title, selection, context: section.blocks.find((block) => block.text.includes(selection))?.text.slice(0, 1600) }) }],
+        scope: targetScope,
+        paperContext: { title: paper.title.slice(0, 250), section: section.title.slice(0, 160),
+          text: (targetScope === 'paper' ? reviewBlocks(countable).map(({ text }) => text.slice(0, 215)).join('\n') : section.blocks.map(({ text }) => text).join('\n')).slice(0, 4000),
+          previous, quote: selected?.slice(0, 1600) },
+        turns: [...related.slice(-4).flatMap((item) => [{ role: 'user', content: item.question }, { role: 'assistant', content: item.answer.slice(0, 3000) }]),
+          { role: 'user', content: trimmed }],
       }, controller.signal)
-      setFollowups((items) => [...items, { quote: selection, reply, section: section.id }])
-      setSelection('')
-    } catch (reason) { if (!controller.signal.aborted) setQuestionError((reason as Error).message) }
-    finally { setAsking(false) }
+      if (!controller.signal.aborted) {
+        setThreads((items) => [...items, { id: crypto.randomUUID(), sectionId: section.id, scope: targetScope,
+          question: trimmed, answer: reply, quote: selected, at: Date.now(), model: used }].slice(-50))
+        setSelection('')
+        setQuestion('')
+      }
+    } catch (reason) {
+      if (!controller.signal.aborted) { setQuestionError((reason as Error).message); setRetry({ question: trimmed, quote: selected, scope: targetScope }) }
+    } finally {
+      if (followup.current === controller) { followup.current = null; setAsking(false) }
+    }
   }
 
   async function generateReview(signal: AbortSignal, notes: Record<string, Lesson>) {
@@ -259,7 +288,7 @@ export function DeepReader({ paper, model, connection, openSettings, owner, styl
               <button className="secondary" aria-pressed={textView} onClick={() => setTextView(true)}>引用文本</button>
               {paper.pdfUrl && <a href={paper.pdfUrl + (paper.format === 'PDF' ? `#page=${page}` : '')} target="_blank" rel="noreferrer" download={paper.format !== 'PDF' ? paper.title + '.' + paper.format?.toLowerCase() : undefined}>{paper.format === 'PDF' ? '打开原件' : '下载原件'} <ArrowUpRight size={12} /></a>}
             </div>}
-            {selection && <button className="secondary selection-action" disabled={asking} onMouseDown={(event) => event.preventDefault()} onClick={() => void askSelection()}>{asking ? '正在讲解…' : '详细讲解选中文字'}</button>}
+            {selection && <button className="secondary selection-action" disabled={asking || !ready} onMouseDown={(event) => event.preventDefault()} onClick={() => void ask('请解释这段原文及其在本节的作用。', selection)}>{asking ? '正在讲解…' : '追问选中文字'}</button>}
             {!textView && paper.original && paper.format === 'PDF' && <>
               <div className="original-tools"><label>PDF 页码 <select value={page} onChange={(event) => setPdfPage(Number(event.target.value))}>{pages.map((n) => <option key={n}>{n}</option>)}</select></label></div>
               <PdfOriginal original={paper.original} page={page} quote={evidence?.quote} />
@@ -289,11 +318,6 @@ export function DeepReader({ paper, model, connection, openSettings, owner, styl
               <div className="quote-links" aria-label="原文引文">{lesson.evidence.map((ref, i) => <button key={i} onClick={() => jumpToQuote(ref.quote, ref.id)}>定位引文 {i + 1}</button>)}</div>
               </div>
             })}
-            {followups.filter((item) => item.section === section.id).map((item, i) => <div className="selection-thread" key={i}>
-              <div className="chat-bubble user"><small>你划选了</small><p>{item.quote}</p><button className="text-button" onClick={() => jumpToQuote(item.quote)}>定位原文</button></div>
-              <div className="chat-bubble assistant"><small>Paper Atlas</small><p>{item.reply}</p></div>
-            </div>)}
-            {questionError && <p role="alert" className="warning">{questionError}</p>}
             {section.kind && <p className="subtle">本节为作者、题录或版权信息。</p>}
             {!section.kind && isComplete(section) && model && <button className="secondary" disabled={!!working || reviewing} onClick={() => void generate([section], false, true)}>按{readingStyles[style]}风格重新讲解</button>}
             {!isComplete(section) && <div className="lesson-empty">
@@ -302,8 +326,30 @@ export function DeepReader({ paper, model, connection, openSettings, owner, styl
                 {sectionError ? '重试本节' : section.batches.some(([first]) => lessons[first.id]) ? '继续本节' : '讲解本节'}
               </button>}
             </div>}
+            <section className="paper-questions" aria-label="向 AI 提问">
+              <div className="source-heading"><h3>向 AI 提问</h3>
+                {!!threads.length && <button className="text-button" onClick={() => {
+                  if (window.confirm('清空这篇论文保存的所有提问？')) { followup.current?.abort(); setThreads([]) }
+                }}>清空对话</button>}
+              </div>
+              {threads.filter((item) => item.sectionId === section.id).map((item) => <div className="selection-thread" key={item.id}>
+                <div className="chat-bubble user"><small>你 · {item.scope === 'paper' ? '全文' : '本节'}</small><p>{item.question}</p>
+                  {item.quote && <button className="text-button" onClick={() => jumpToQuote(item.quote!)}>定位原文</button>}</div>
+                <div className="chat-bubble assistant"><small>Paper Atlas{item.model && <> · {item.model}</>}</small><p>{item.answer}</p></div>
+              </div>)}
+              <form onSubmit={(event) => { event.preventDefault(); void ask(question, selection || undefined) }}>
+                <label className="question">范围<select value={scope} onChange={(event) => setScope(event.target.value as typeof scope)}><option value="section">本节</option><option value="paper">全文</option></select></label>
+                <label className="question">问题<textarea aria-label="向 AI 提问" ref={questionInput} rows={2} value={question} maxLength={1500} onChange={(event) => setQuestion(event.target.value)} /></label>
+                <div className="quote-links">{['这一节在全文论证里起什么作用', selection ? `这里的「${selection.slice(0, 30)}」是什么意思` : '这里的关键术语是什么意思', '和上一节的差别在哪', '这个结论的证据够吗'].map((item) =>
+                  <button key={item} type="button" disabled={!ready || asking} onClick={() => void ask(item, selection || undefined)}>{item}</button>)}</div>
+                <div className="form-actions"><button className="primary" disabled={!question.trim() || !ready || asking}>{asking ? '正在回答…' : '发送问题'}</button>
+                  {asking && <button type="button" className="secondary" onClick={() => followup.current?.abort()}>取消提问</button>}</div>
+              </form>
+              {questionError && <p role="alert" className="warning">{questionError} {retry && <button onClick={() => void ask(retry.question, retry.quote, retry.scope)}>重试</button>}</p>}
+            </section>
           </article>
         </div>
+        <button className="secondary mobile-paper-question" onClick={() => questionInput.current?.focus()}>向 AI 提问</button>
         <div className="chapter-nav"><button className="secondary" disabled={index === 0} onClick={() => select(index - 1)}><ArrowLeft size={15} /> 上一节</button>
           <button className="secondary" onClick={() => select(index + 1)}>{index === sections.length - 1 ? '全文回顾' : '下一节'} <ArrowRight size={15} /></button></div>
       </div>}

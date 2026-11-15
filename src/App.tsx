@@ -100,6 +100,15 @@ function WorkspaceApp({ user, onUser }: { user: User | null; onUser: (user: User
   const modelIssue = !connection && status.lastError ? '默认模型不可用，请在设置中切换。' : ''
   const [comparison, setComparison] = useState<Explanation | null>(null)
   const [comparisonId, setComparisonId] = useState('')
+  const [comparisonPaper, setComparisonPaper] = useState<Paper>()
+  const [comparisonSection, setComparisonSection] = useState('')
+  const [currentSection, setCurrentSection] = useState('')
+  const [comparisonBusy, setComparisonBusy] = useState(false)
+  const [comparisonError, setComparisonError] = useState('')
+  const [comparisonText, setComparisonText] = useState('')
+  const [saveComparison, setSaveComparison] = useState(false)
+  const comparisonInput = useRef<HTMLInputElement>(null)
+  const comparisonVersion = useRef(0)
   const [discovery, setDiscovery] = useState<{ query: string; position: string; works: Related[]; year?: string }>()
   const [busy, setBusy] = useState('')
   const [error, setError] = useState('')
@@ -171,6 +180,13 @@ function WorkspaceApp({ user, onUser }: { user: User | null; onUser: (user: User
     setDiscovery(undefined)
     setComparison(null)
     setComparisonId('')
+    setComparisonPaper(undefined)
+    setComparisonSection('')
+    setComparisonError('')
+    setComparisonText('')
+    setSaveComparison(false)
+    setComparisonBusy(false)
+    comparisonVersion.current++
     setBusy('')
     setError('')
   }
@@ -300,15 +316,50 @@ function WorkspaceApp({ user, onUser }: { user: User | null; onUser: (user: User
     }
   }
 
-  function comparePapers(event: FormEvent) {
+  function selectComparison(draft?: Paper, id = '') {
+    setComparisonPaper(draft)
+    setComparisonId(id)
+    setComparisonSection('')
+    setComparison(null)
+    setComparisonError('')
+    setSaveComparison(false)
+  }
+
+  async function importComparison(file?: File) {
+    if (!paper || comparisonBusy || (!file && !comparisonText.trim())) return
+    const version = ++comparisonVersion.current
+    setComparisonBusy(true)
+    setComparisonError('')
+    try {
+      const { importPaper, makePaper, textBlocks } = await import('./import')
+      const result = file ? await importPaper(file, paper.field) : makePaper('粘贴的对照论文', textBlocks(comparisonText), paper.field, '粘贴文本')
+      if (version === comparisonVersion.current) {
+        selectComparison(result)
+        setComparisonText('')
+      }
+    } catch (reason) {
+      if (version === comparisonVersion.current) setComparisonError((reason as Error).message)
+    } finally { if (version === comparisonVersion.current) setComparisonBusy(false) }
+  }
+
+  async function comparePapers(event: FormEvent) {
     event.preventDefault()
     if (!paper || !current) return
-    const target = library.find((item) => item.id === comparisonId && item.id !== paper.id)
+    const target = comparisonPaper ?? library.find((item) => item.id === comparisonId && item.id !== paper.id)
     if (!target) return
+    const a = readerSections(paper.blocks).find(({ id }) => id === currentSection)
+    const targetSections = readingSections(target.blocks)
+    const b = comparisonSection ? targetSections.find(({ id }) => id === comparisonSection) : targetSections.find(({ title }) => /^(abstract|摘要)/i.test(title))
+    if (comparisonPaper && saveComparison && !library.some(({ id }) => id === target.id)) {
+      try {
+        await rememberPaper(target, owner)
+        setLibrary((items) => [target, ...items.filter(({ id }) => id !== target.id)])
+      } catch { setComparisonError('对照论文未能保存，请检查浏览器存储。'); return }
+    }
     const blocks = [
-      { ...current, id: 'a', title: `论文 A · ${current.title}`, text: current.text.slice(0, 5000) },
-      ...target.blocks.slice(0, 3).map((block, i) => ({
-        ...block, id: `b${i}`, title: `论文 B · ${block.title}`, text: block.text.slice(0, 5000),
+      { id: 'a', title: `论文 A · ${a?.title || current.title}`.slice(0, 100), text: (a?.blocks.map(({ text }) => text).join('\n') || current.text).slice(0, 5000) },
+      ...(b?.blocks ?? target.blocks).slice(0, b ? 5 : 3).map((block, i) => ({
+        ...block, id: `b${i}`, title: `论文 B · ${block.title}`.slice(0, 100), text: block.text.slice(0, 5000),
       })),
     ]
     void run('正在对照两篇论文的所选文段…', (signal) => json<Explanation>('/api/explain', {
@@ -344,6 +395,7 @@ function WorkspaceApp({ user, onUser }: { user: User | null; onUser: (user: User
   const recent = list[0]
   const visibleConversations = project ? conversations.filter((item) => item.projectId === project.id) : conversations
   const sameField = library.filter((item) => item.field === paper?.field && item.id !== paper?.id)
+  const comparisonTarget = comparisonPaper ?? sameField.find((item) => item.id === comparisonId)
 
   return <>
     <header className="workspace-top">
@@ -413,7 +465,7 @@ function WorkspaceApp({ user, onUser }: { user: User | null; onUser: (user: User
         <nav className="tabs" aria-label="论文阅读视图">{tabs.map(([id, label, Icon]) => <button type="button" key={id} aria-pressed={tab === id} onClick={() => { setTab(id); setError('') }}><Icon size={16} />{label}</button>)}</nav>
         <div className="feedback" aria-live="polite">{busy && <div className="notice" role="status">{busy}<button onClick={() => { request.current?.abort(); setBusy('') }}>取消</button></div>}{error && <div className="warning" role="alert">{error}</div>}</div>
         <div hidden={tab !== 'read'}><DeepReader key={paper.id} paper={paper} owner={owner} style={style} model={activeModel} connection={connection}
-          openSettings={openSettings} /></div>
+          openSettings={openSettings} onSection={setCurrentSection} visible={tab === 'read'} /></div>
         {(tab === 'compare' || tab === 'graph') && <section className="tab-content discovery">
           <div className="source-heading"><h2>{tab === 'compare' ? '查找同类研究' : '论文在领域中的位置'}</h2>
             {activeModel ? <button className="primary" disabled={!!busy} onClick={findRelated}><Search size={15} />{discovery ? '重新检索' : '检索并分析'}</button>
@@ -429,12 +481,26 @@ function WorkspaceApp({ user, onUser }: { user: User | null; onUser: (user: User
           </>}
         </section>}
         {tab === 'compare' && <>
-          <section className="tab-content"><h2>对比我的论文</h2>
-            {sameField.length ? <form onSubmit={comparePapers}>
-              <label className="question">同领域论文<select value={comparisonId} required onChange={(event) => { setComparisonId(event.target.value); setComparison(null) }}><option value="">选择一篇论文</option>
+          <section className="tab-content" {...fileDrop((file) => void importComparison(file))}><h2>对比我的论文</h2>
+            <form onSubmit={(event) => void comparePapers(event)}>
+              <input hidden type="file" accept=".pdf,.docx,.md,.txt" ref={comparisonInput} onChange={(event) => {
+                const file = event.target.files?.[0]; event.target.value = ''; if (file) void importComparison(file)
+              }} />
+              <button type="button" className="secondary" disabled={comparisonBusy || !!busy} onClick={() => comparisonInput.current?.click()}><CloudUpload size={16} />{comparisonBusy ? '正在读取对照论文…' : '拖入或上传对照论文'}</button>
+              <label className="question">从论文库选择<select value={comparisonId} disabled={comparisonBusy || !!busy} onChange={(event) => selectComparison(undefined, event.target.value)}><option value="">选择一篇论文</option>
                 {sameField.map((item) => <option key={item.id} value={item.id}>{item.short}</option>)}</select></label>
-              <div className="form-actions"><span>将当前文段与所选论文的前 3 段发送给当前模型。</span><button className="primary" disabled={!activeModel || !!busy}><Columns3 size={15} /> 对照讲解</button></div>
-            </form> : <div className="empty">论文库中暂无同领域的另一篇论文。<button className="text-button" onClick={() => openImport()}> 导入论文</button></div>}
+              <details><summary>粘贴对照论文正文</summary><textarea aria-label="对照论文正文" rows={3} maxLength={100000} value={comparisonText} onChange={(event) => setComparisonText(event.target.value)} />
+                <button type="button" className="secondary" disabled={comparisonBusy || !comparisonText.trim()} onClick={() => void importComparison()}>使用正文</button></details>
+              {comparisonError && <p className="warning" role="alert">{comparisonError}</p>}
+              {comparisonTarget && <div className="relation-detail">
+                <div className="source-heading"><h3>{comparisonTarget.title}</h3><button type="button" className="text-button" disabled={!!busy} onClick={() => selectComparison()}>移除</button></div>
+                <p>{comparisonTarget.format} · {comparisonTarget.blocks.length} {comparisonTarget.format === 'PDF' ? '页' : '段'} · {disciplineLabel(comparisonTarget.field, comparisonTarget.discipline)}</p>
+                {comparisonPaper && <label><input type="checkbox" checked={saveComparison} onChange={(event) => setSaveComparison(event.target.checked)} /> 同时保存到论文库</label>}
+                <label className="question">对照章节<select value={comparisonSection} onChange={(event) => setComparisonSection(event.target.value)}><option value="">摘要 / 前 3 段</option>
+                  {readingSections(comparisonTarget.blocks).map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}</select></label>
+              </div>}
+              <div className="form-actions"><span>对照当前精读章节与所选材料。</span><button className="primary" disabled={!comparisonTarget || !activeModel || !!busy || comparisonBusy}><Columns3 size={15} /> 对照讲解</button></div>
+            </form>
             {comparison && <div className="ai-result"><div className="kicker">{comparison.model} · 引文已核对</div><h3>方法与证据</h3><p>{comparison.explanation}</p><h3>具体差异</h3><p>{comparison.example}</p><h3>证据范围</h3><p>{comparison.limits}</p>
               <ul>{comparison.evidence.map((ref, i) => <li key={i}>{ref.id === 'a' ? '论文 A' : '论文 B'} · {ref.quote}</li>)}</ul></div>}
           </section>

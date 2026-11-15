@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { normalizeDoi, verifiedExplanation } from './reader.ts'
+import { normalizeDoi, validPaperContext, verifiedExplanation } from './reader.ts'
 import { readerSections, readingBatches, readingSections } from '../src/sections.ts'
 import { locateQuote } from '../src/evidence.ts'
 import { fileDrop } from '../src/drop.ts'
@@ -18,6 +18,14 @@ test('accepts a literal passage quote and rejects invented or misattributed evid
 test('normalizes DOI resolver links and DOI prefixes', () => {
   assert.equal(normalizeDoi(' https://doi.org/10.5555/123 '), '10.5555/123')
   assert.equal(normalizeDoi('doi: 10.5555/123'), '10.5555/123')
+})
+
+test('bounds paper chat context and permits a question with no highlighted text', () => {
+  const context = { title: '题名', section: '方法', text: '原文'.repeat(2000) }
+  assert.equal(validPaperContext('section', context), true)
+  assert.equal(validPaperContext('paper', { ...context, text: context.text + '。' }), false)
+  assert.equal(validPaperContext('custom', context), false)
+  assert.equal(validPaperContext('section', { ...context, quote: false }), false)
 })
 
 test('a file drop hands the original file to the workspace importer and prevents browser navigation', () => {
