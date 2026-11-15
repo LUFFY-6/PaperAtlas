@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { ArrowUpRight, BookOpen, CloudUpload, ChevronRight, Columns3, Ellipsis, FileText, Folder, Layers3, Moon, Network, Plus, Search, Settings, Sun, X } from 'lucide-react'
 import { DeepReader } from './DeepReader'
 import { ModelSettings, type Connection } from './ModelSettings'
@@ -16,6 +16,7 @@ import { modelFetch, modelStatus } from './modelStatus'
 import { createConversation, listConversations, removeConversation, renameConversation, saveConversation, type Conversation } from './conversations'
 import { normalizeEffort, readEffort, type Effort } from './effort'
 import { References } from './References'
+import { Intro, shouldPlayIntro } from './Intro'
 
 const tabs = [['read', '全文精读', BookOpen], ['compare', '方法对比', Columns3], ['graph', '论文关系', Network], ['source', '文段', FileText]] as const
 type Tab = typeof tabs[number][0]
@@ -30,8 +31,16 @@ async function json<T>(url: string, options?: RequestInit): Promise<T> {
 
 export function App() {
   const [user, setUser] = useState<User | null>(null)
-  useEffect(() => { void api<{ user: User | null }>('/api/session').then(({ user }) => setUser(user)).catch(() => {}) }, [])
-  return <WorkspaceApp key={user?.id || 'guest'} user={user} onUser={setUser} />
+  const [sessionReady, setSessionReady] = useState(false)
+  const [showIntro, setShowIntro] = useState(shouldPlayIntro)
+  const finishIntro = useCallback(() => setShowIntro(false), [])
+  useEffect(() => {
+    void api<{ user: User | null }>('/api/session').then(({ user }) => setUser(user)).catch(() => {}).finally(() => setSessionReady(true))
+  }, [])
+  return <>
+    {showIntro && <Intro owner={sessionReady ? user?.id ?? '' : undefined} onFinish={finishIntro} />}
+    <WorkspaceApp key={user?.id || 'guest'} user={user} onUser={setUser} />
+  </>
 }
 
 function WorkspaceApp({ user, onUser }: { user: User | null; onUser: (user: User | null) => void }) {
