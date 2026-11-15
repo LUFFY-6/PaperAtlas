@@ -1,4 +1,4 @@
-import { useState, type FormEvent, type RefObject } from 'react'
+import { useState, type FormEvent, type ReactNode, type RefObject } from 'react'
 import { X } from 'lucide-react'
 import { disciplineOptions, readingStyles, type Field, type ReadingStyle } from './papers'
 import { api, type User } from './Workspace'
@@ -14,10 +14,13 @@ export function DisciplineSelect({ field, value, onChange, disabled, className }
     </select>}</label>
 }
 
-export function Preferences({ dialog, user, onUser, style, onStyle, openAccount, theme, onTheme }: {
+export type SettingsTab = 'model' | 'profile'
+
+export function Preferences({ dialog, user, onUser, style, onStyle, openAccount, theme, onTheme, tab, onTab, modelPanel }: {
   dialog: RefObject<HTMLDialogElement | null>; user: User | null; onUser: (user: User) => void;
   style: ReadingStyle; onStyle: (style: ReadingStyle) => void; openAccount: () => void
   theme: Theme; onTheme: (theme: Theme) => void
+  tab: SettingsTab; onTab: (tab: SettingsTab) => void; modelPanel: ReactNode
 }) {
   const [status, setStatus] = useState('')
   const [error, setError] = useState('')
@@ -37,6 +40,11 @@ export function Preferences({ dialog, user, onUser, style, onStyle, openAccount,
   return <dialog ref={dialog} className="preferences-dialog" aria-labelledby="preferences-title"
     onClose={() => { setStatus(''); setError('') }}>
     <header><h2 id="preferences-title">设置</h2><button className="icon-button" aria-label="关闭设置" onClick={() => dialog.current?.close()}><X size={18} /></button></header>
+    <nav className="tabs" aria-label="设置类别">
+      <button type="button" aria-pressed={tab === 'model'} onClick={() => onTab('model')}>模型</button>
+      <button type="button" aria-pressed={tab === 'profile'} onClick={() => onTab('profile')}>偏好与资料</button>
+    </nav>
+    {tab === 'model' ? modelPanel : <>
     <fieldset><legend>主题</legend><div className="style-options">
       {(['light', 'dark', 'system'] as const).map((id, i) => <label key={id}><input type="radio" name="theme" checked={theme === id} onChange={() => onTheme(id)} />{['浅色', '深色', '跟随系统'][i]}</label>)}
     </div></fieldset>
@@ -51,5 +59,6 @@ export function Preferences({ dialog, user, onUser, style, onStyle, openAccount,
     </form> : <button className="secondary" onClick={() => { dialog.current?.close(); openAccount() }}>登录后编辑个人资料</button>}
     {status && <p role="status">{status}</p>}
     {error && <p role="alert" className="warning">{error}</p>}
+    </>}
   </dialog>
 }

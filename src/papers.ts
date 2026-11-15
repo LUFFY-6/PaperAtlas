@@ -1,4 +1,7 @@
+import { BookOpen, Cpu, FlaskConical, GraduationCap, Shapes, TrendingUp } from 'lucide-react'
+
 export const fields = { engineering: '工学', science: '理学', literature: '文学', economics: '经济学', education: '教育学', custom: '自定义' } as const
+export const fieldIcon = { engineering: Cpu, science: FlaskConical, literature: BookOpen, economics: TrendingUp, education: GraduationCap, custom: Shapes }
 export type Field = keyof typeof fields
 export const disciplines = {
   engineering: { computing: '计算机与人工智能', mechanical: '机械与机器人', electronics: '电子信息' },
@@ -39,6 +42,7 @@ export type Related = {
   problem: string; method: string; difference: string; evidence?: string; evidenceSource?: string; cites?: string[]
 }
 export type Paper = {
+  lastOpened?: number
   id: string; title: string; short: string; author: string; year: string; venue: string; field: Field
   url?: string; blocks: Block[]; format?: string; partial?: boolean; original?: Blob; pdfUrl?: string
   question?: string; method?: string; related?: Related[]; projectId?: string; discipline?: string; historyTitle?: string

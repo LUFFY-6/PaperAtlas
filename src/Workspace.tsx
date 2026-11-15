@@ -3,12 +3,13 @@ import { ArrowUp, BookOpen, Columns3, FileText, FolderPlus, Network, Paperclip, 
 import { disciplineLabel, disciplineOptions, fields, type Field, type Project, type ReadingStyle } from './papers'
 import type { Connection } from './ModelSettings'
 import { fileDrop } from './drop'
+import { modelFetch } from './modelStatus'
 
 export type User = { id: string; name: string; displayName?: string; bio?: string }
 type Turn = { role: 'user' | 'assistant'; content: string }
 
 export async function api<T>(url: string, body?: unknown, signal?: AbortSignal): Promise<T> {
-  const response = await fetch(url, body === undefined ? { signal } : {
+  const response = await modelFetch(url, body === undefined ? { signal } : {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal,
   })
   const data = await response.json()

@@ -33,7 +33,7 @@ async function transaction<T>(owner: string, store: string, mode: IDBTransaction
 
 export async function history(owner = '') {
   const entries = await transaction<StoredPaper[]>(owner, 'papers', 'readonly', (store) => store.getAll())
-  return entries.sort((a, b) => b.opened - a.opened).map(({ paper }) => paper)
+  return entries.sort((a, b) => b.opened - a.opened).map(({ paper, opened }) => ({ ...paper, lastOpened: opened }))
 }
 export function rememberPaper(paper: Paper, owner = '') {
   return transaction(owner, 'papers', 'readwrite', (store) => store.put({ paper, opened: Date.now() }))

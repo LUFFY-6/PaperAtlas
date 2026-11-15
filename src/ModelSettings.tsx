@@ -1,5 +1,6 @@
-import { useRef, useState, type FormEvent, type RefObject } from 'react'
-import { ArrowRight, Check, Eye, EyeOff, Plug, X } from 'lucide-react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { ArrowRight, Check, Eye, EyeOff, Plug } from 'lucide-react'
+import { modelFetch } from './modelStatus'
 
 export type Connection = { base: string; model: string; key: string }
 
@@ -11,8 +12,8 @@ const presets = {
   ollama: { label: 'Ollama · 本机', base: 'http://127.0.0.1:11434/v1', model: '' },
 } as const
 
-export function ModelSettings({ dialog, current, fallback, remembered, onChange }: {
-  dialog: RefObject<HTMLDialogElement | null>; current: Connection | null
+export function ModelSettings({ current, fallback, remembered, onChange, onClose }: {
+  current: Connection | null; onClose: () => void
   fallback: string; remembered: boolean; onChange: (connection: Connection | null, remember?: boolean) => void
 }) {
   const [preset, setPreset] = useState<keyof typeof presets>('custom')
@@ -23,6 +24,7 @@ export function ModelSettings({ dialog, current, fallback, remembered, onChange 
   const [error, setError] = useState('')
   const [remember, setRemember] = useState(remembered)
   const pending = useRef<AbortController | null>(null)
+  useEffect(() => () => pending.current?.abort(), [])
 
   function update(next: Connection) {
     setDraft(next)
@@ -44,7 +46,7 @@ export function ModelSettings({ dialog, current, fallback, remembered, onChange 
     setBusy(true)
     setError('')
     try {
-      const result = await fetch('/api/model/test', {
+      const result = await modelFetch('/api/model/test', {
         method: 'POST', headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ connection }), signal: controller.signal,
       })
@@ -58,19 +60,10 @@ export function ModelSettings({ dialog, current, fallback, remembered, onChange 
     }
   }
 
-  function close() {
-    pending.current?.abort()
-    setShowKey(false)
-    setPreset('custom')
-    setRemember(remembered)
-    update(current ?? { base: '', model: '', key: '' })
-  }
-
-  return <dialog ref={dialog} className="model-dialog" aria-labelledby="model-settings-title" onClose={close}>
+  return <div className="model-panel">
     <header className="settings-header">
       <span className="settings-icon"><Plug size={20} /></span>
       <div><h2 id="model-settings-title">模型设置</h2><p>{current ? `正在使用 ${current.model}` : fallback ? `默认模型 · ${fallback}` : '选择一个模型以启用 AI 讲解'}</p></div>
-      <button type="button" className="icon-button push" aria-label="关闭模型设置" onClick={() => dialog.current?.close()}><X size={20} /></button>
     </header>
     <form onSubmit={test}>
       <fieldset disabled={busy}>
@@ -97,13 +90,13 @@ export function ModelSettings({ dialog, current, fallback, remembered, onChange 
       {tested && <p className="model-success" role="status"><Check size={16} /> 连接和 JSON 响应通过，可以启用。</p>}
       {busy && <p className="subtle" role="status">正在测试模型连接…</p>}
       <footer className="settings-actions">
-        {current && <button className="text-button" type="button" disabled={busy} onClick={() => { onChange(null); dialog.current?.close() }}>{fallback ? '恢复默认模型' : '断开模型'}</button>}
+        {current && <button className="text-button" type="button" disabled={busy} onClick={() => { onChange(null); onClose() }}>{fallback ? '恢复默认模型' : '断开模型'}</button>}
         <button type="submit" className="secondary push" disabled={busy}>{busy ? '测试中…' : '测试连接'}</button>
         <button type="button" className="primary" disabled={!tested || busy} onClick={() => {
           onChange({ base: draft.base.trim(), model: draft.model.trim(), key: draft.key.trim() }, remember)
-          dialog.current?.close()
+          onClose()
         }}>启用模型 <ArrowRight size={15} /></button>
       </footer>
     </form>
-  </dialog>
+  </div>
 }

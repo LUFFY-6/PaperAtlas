@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { modelFetch } from './modelStatus'
 import { ArrowLeft, ArrowRight, ArrowUpRight, BookOpen, Check, Circle, List, Sparkles } from 'lucide-react'
 import type { Connection } from './ModelSettings'
 import { disciplineLabel, readingStyles, type Paper, type ReadingStyle } from './papers'
@@ -156,7 +157,7 @@ export function DeepReader({ paper, model, connection, openSettings, owner, styl
         setErrors((previous) => ({ ...previous, [batchId]: '' }))
         const position = sections.indexOf(item)
         try {
-          const response = await fetch('/api/explain', {
+          const response = await modelFetch('/api/explain', {
             method: 'POST', headers: { 'content-type': 'application/json' }, signal: controller.signal,
             body: JSON.stringify({
               deep: true, title: paper.title, field: paper.field, style, discipline: disciplineLabel(paper.field, paper.discipline), question: '', section: item.title.slice(0, 160),

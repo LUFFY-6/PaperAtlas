@@ -1,24 +1,25 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
-import { ArrowUpRight, BookOpen, CloudUpload, ChevronRight, Columns3, Ellipsis, FileText, Folder, Layers3, Moon, Network, Plug, Plus, Search, Settings, Sun, X } from 'lucide-react'
+import { ArrowUpRight, BookOpen, CloudUpload, ChevronRight, Columns3, Ellipsis, FileText, Folder, Layers3, Moon, Network, Plus, Search, Settings, Sun, X } from 'lucide-react'
 import { DeepReader } from './DeepReader'
 import { ModelSettings, type Connection } from './ModelSettings'
-import { disciplineLabel, fields, normalizeField, type Field, type Paper, type Related, type Project } from './papers'
+import { disciplineLabel, fieldIcon, fields, normalizeField, type Field, type Paper, type Related, type Project } from './papers'
 import { history, recallConnection, recallStyle, rememberConnection, rememberPaper, rememberStyle, removeHistory, renameHistory } from './storage'
 import { LiteratureMap, MethodTable } from './Literature'
 import { PdfOriginal, TextOriginal, WordOriginal } from './Original'
 import { api, ChatHome, WorkspaceDialogs, type User } from './Workspace'
 import { fileDrop } from './drop'
 import { StudyLibrary } from './StudyLibrary'
-import { DisciplineSelect, Preferences } from './Preferences'
+import { DisciplineSelect, Preferences, type SettingsTab } from './Preferences'
 import { readingSections } from './sections'
 import { applyTheme, readTheme, type Theme } from './theme'
+import { modelFetch, modelStatus } from './modelStatus'
 
 const tabs = [['read', '全文精读', BookOpen], ['compare', '方法对比', Columns3], ['graph', '论文关系', Network], ['source', '文段', FileText]] as const
 type Tab = typeof tabs[number][0]
 type Explanation = { explanation: string; example: string; limits: string; evidence: { id: string; quote: string }[]; model: string }
 
 async function json<T>(url: string, options?: RequestInit): Promise<T> {
-  const response = await fetch(url, options)
+  const response = await modelFetch(url, options)
   const body = await response.json()
   if (!response.ok) throw new Error(body.error || '请求失败，请重试。')
   return body as T
@@ -47,10 +48,18 @@ function WorkspaceApp({ user, onUser }: { user: User | null; onUser: (user: User
   const owner = user?.id ?? ''
   const [conversation, setConversation] = useState(0)
   const [view, setView] = useState<'workspace' | 'library'>('workspace')
+  const [libraryTab, setLibraryTab] = useState<'mine' | 'preset'>('preset')
   const [projects, setProjects] = useState<Project[]>([])
   const [project, setProject] = useState<Project>()
   const account = useRef<HTMLDialogElement>(null)
   const preferences = useRef<HTMLDialogElement>(null)
+  const [settingsTab, setSettingsTab] = useState<SettingsTab>('profile')
+  const [settingsVersion, setSettingsVersion] = useState(0)
+  function openSettings(tab: SettingsTab = 'model') {
+    setSettingsTab(tab)
+    setSettingsVersion((version) => version + 1)
+    preferences.current?.showModal()
+  }
   const historyDialog = useRef<HTMLDialogElement>(null)
   const [style, setStyle] = useState(() => recallStyle(owner))
   const [historyAction, setHistoryAction] = useState<{ item: Paper; action: 'rename' | 'delete' }>()
@@ -75,7 +84,14 @@ function WorkspaceApp({ user, onUser }: { user: User | null; onUser: (user: User
   const [storageMessage, setStorageMessage] = useState('')
   const [historyReady, setHistoryReady] = useState(false)
   const activeModel = connection?.model || fallback
-  const modelDialog = useRef<HTMLDialogElement>(null)
+  const [, refreshStatus] = useState(0)
+  useEffect(() => {
+    const refresh = () => refreshStatus((value) => value + 1)
+    window.addEventListener('paper-atlas-model-status', refresh)
+    return () => window.removeEventListener('paper-atlas-model-status', refresh)
+  }, [])
+  const status = modelStatus(connection)
+  const modelIssue = !connection && status.lastError ? '默认模型不可用，请在设置中切换。' : ''
   const [comparison, setComparison] = useState<Explanation | null>(null)
   const [comparisonId, setComparisonId] = useState('')
   const [discovery, setDiscovery] = useState<{ query: string; position: string; works: Related[]; year?: string }>()
@@ -83,12 +99,10 @@ function WorkspaceApp({ user, onUser }: { user: User | null; onUser: (user: User
   const [error, setError] = useState('')
   const modal = useRef<HTMLDialogElement>(null)
   const dropInput = useRef<HTMLInputElement>(null)
-  const [homeField, setHomeField] = useState<Field>('engineering')
-  const [homeDiscipline, setHomeDiscipline] = useState('')
   const [file, setFile] = useState<File>()
   const [importName, setImportName] = useState('')
   const [importText, setImportText] = useState('')
-  const [importField, setImportField] = useState<Field>('engineering')
+  const [importField, setImportField] = useState<Field | ''>('')
   const [importDiscipline, setImportDiscipline] = useState('')
   const [importBusy, setImportBusy] = useState(false)
   const [importError, setImportError] = useState('')
@@ -124,7 +138,7 @@ function WorkspaceApp({ user, onUser }: { user: User | null; onUser: (user: User
     setProject((current) => current?.id === next.projectId ? current : projects.find((item) => item.id === next.projectId))
     request.current?.abort()
     setPaper(next.original ? { ...next, pdfUrl: URL.createObjectURL(next.original) } : next)
-    setLibrary((current) => [next, ...current.filter(({ id }) => id !== next.id)])
+    setLibrary((current) => [{ ...next, lastOpened: Date.now() }, ...current.filter(({ id }) => id !== next.id)])
     void rememberPaper(next, owner).catch(() => setStorageMessage('浏览器未能保存这篇论文，当前仍可阅读。'))
     setSource(next.blocks[0].id)
     setTab('read')
@@ -170,20 +184,21 @@ function WorkspaceApp({ user, onUser }: { user: User | null; onUser: (user: User
     setView('workspace')
   }
 
-  function openImport() {
+  function openImport(selected?: File) {
+    if (importBusy) return
     setImportError('')
     setImportName('')
     setImportText('')
-    setImportField(project?.field ?? homeField)
-    setImportDiscipline(project?.discipline ?? homeDiscipline)
-    setFile(undefined)
+    setImportField(project?.field ?? '')
+    setImportDiscipline(project?.discipline ?? '')
+    setFile(selected)
     modal.current?.querySelector('form')?.reset()
     modal.current?.showModal()
   }
 
   async function addPaper(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (importBusy) return
+    if (importBusy || !importField) return
     setImportError('')
     setImportBusy(true)
     try {
@@ -212,21 +227,6 @@ function WorkspaceApp({ user, onUser }: { user: User | null; onUser: (user: User
       if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : '请求失败，请重试。')
     } finally {
       if (request.current === controller) setBusy('')
-    }
-  }
-
-  async function upload(file: File) {
-    if (importBusy) return
-    setImportError('')
-    setImportBusy(true)
-    try {
-      const { importPaper } = await import('./import')
-      const next = await importPaper(file, project?.field ?? homeField)
-      choose({ ...next, projectId: project?.id, discipline: (project?.discipline ?? homeDiscipline).trim() })
-    } catch (reason) {
-      setImportError(reason instanceof Error ? reason.message : '导入失败，请换一种格式。')
-    } finally {
-      setImportBusy(false)
     }
   }
 
@@ -280,45 +280,47 @@ function WorkspaceApp({ user, onUser }: { user: User | null; onUser: (user: User
         <button aria-current={view === 'workspace' ? 'page' : undefined} onClick={() => setView('workspace')}>科研工作台</button>
         <button aria-current={view === 'library' ? 'page' : undefined} onClick={() => setView('library')}>学习库</button>
       </nav>
-      <button className="model-trigger" onClick={() => modelDialog.current?.showModal()}><Plug size={16} /><span>模型设置</span></button>
+      <button className="model-trigger" aria-label="模型连接状态" title={status.lastError || (status.lastOkAt ? '最近一次请求成功' : '尚未验证连接')} onClick={() => openSettings()}>
+        <i className="status-dot" data-state={status.lastError ? 'error' : status.lastOkAt && activeModel ? 'ok' : 'idle'} /><span>{activeModel || '未配置模型'}</span>
+      </button>
       <button className="theme-toggle" aria-label={dark ? '切换浅色主题' : '切换深色主题'} onClick={() => changeTheme(dark ? 'light' : 'dark')}>{dark ? <Sun size={16} /> : <Moon size={16} />}</button>
       <button className="account-trigger" onClick={() => account.current?.showModal()}>{user?.displayName || user?.name || '登录 / 注册'}</button>
     </header>
     <input type="file" hidden ref={dropInput} accept=".pdf,.docx,.md,.txt" onChange={(event) => {
       const selected = event.target.files?.[0]
       event.target.value = ''
-      if (selected) void upload(selected)
+      if (selected) openImport(selected)
     }} />
     <div className="desktop-workspace">
-      <aside className="workspace-sidebar" aria-label="论文库和项目" {...fileDrop((file) => void upload(file))}>
+      <aside className="workspace-sidebar" aria-label="论文库和项目" {...fileDrop(openImport)}>
         <button className="sidebar-new" onClick={() => { resetPaper(); setConversation((id) => id + 1); setView('workspace') }}><Plus size={17} /> 新对话</button>
         <div className="sidebar-heading"><span>项目</span><button aria-label="新建项目" onClick={() => (user ? projectDialog : account).current?.showModal()}><Plus size={15} /></button></div>
         {project && <button className="sidebar-row" onClick={() => selectProject(undefined)}><Folder size={15} /> 全部论文</button>}
-        {projects.map((item) => <button className="sidebar-row" aria-current={item.id === project?.id ? 'true' : undefined} onClick={() => selectProject(item)} key={item.id}><Folder size={15} /><span>{item.title}</span><small>{disciplineLabel(item.field, item.discipline)}</small></button>)}
-        <div className="sidebar-heading"><span>论文库</span><button aria-label="粘贴或导入论文" onClick={openImport}><Plus size={15} /></button></div>
+        {projects.map((item) => { const Icon = fieldIcon[item.field]; return <button className="sidebar-row" aria-current={item.id === project?.id ? 'true' : undefined} onClick={() => selectProject(item)} key={item.id}><Icon size={15} role="img" aria-label={fields[item.field] + '项目'} /><span>{item.title}</span><small>{disciplineLabel(item.field, item.discipline)}</small></button> })}
+        <div className="sidebar-heading"><span>论文库</span><button aria-label="粘贴或导入论文" onClick={() => openImport()}><Plus size={15} /></button></div>
         <button className="sidebar-drop" disabled={importBusy} onClick={() => dropInput.current?.click()}><CloudUpload size={19} /> {importBusy ? '正在读取论文…' : '拖入或点击上传'}</button>
-        {!project && <><label className="sidebar-field">导入领域<select value={homeField} onChange={(event) => { setHomeField(event.target.value as Field); setHomeDiscipline('') }}>{Object.entries(fields).map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select></label>
-          <DisciplineSelect className="sidebar-field" field={homeField} value={homeDiscipline} onChange={setHomeDiscipline} /></>}
         <div className="sidebar-heading"><span>阅读历史</span></div>
-        {list.length ? <div className="sidebar-list">{list.map((item) => <div className="history-row" key={item.id}>
-          <button className="sidebar-row" title={item.historyTitle || item.title} aria-current={paper?.id === item.id && view === 'workspace' ? 'true' : undefined} onClick={() => choose(item)}><FileText size={15} /><span>{item.historyTitle || item.short}</span></button>
+        {list.length ? <div className="sidebar-list">{list.map((item) => { const Icon = fieldIcon[item.field]; return <div className="history-row" key={item.id}>
+          <button className="sidebar-row" aria-label={item.historyTitle || item.title} title={item.historyTitle || item.title} aria-current={paper?.id === item.id && view === 'workspace' ? 'true' : undefined} onClick={() => choose(item)}><Icon size={15} role="img" aria-label={fields[item.field] + '论文'} /><span>{item.historyTitle || item.short}</span></button>
           <details className="history-menu"><summary aria-label={`管理 ${item.historyTitle || item.short}`}><Ellipsis size={16} /></summary><div>
             {(['rename', 'delete'] as const).map((action) => <button key={action} onClick={(event) => {
               event.currentTarget.closest('details')?.removeAttribute('open')
               setHistoryAction({ item, action }); historyDialog.current?.showModal()
             }}>{action === 'rename' ? '重命名' : '删除'}</button>)}
           </div></details>
-        </div>)}</div>
+        </div> })}</div>
           : <p className="sidebar-empty">{historyReady ? '暂无阅读记录' : '正在读取历史…'}</p>}
-        <footer className="sidebar-settings"><button onClick={() => preferences.current?.showModal()}><Settings size={16} /> 设置</button></footer>
+        <footer className="sidebar-settings"><button onClick={() => openSettings('profile')}><Settings size={16} /> 设置</button></footer>
       </aside>
       <div className="workspace-content">
       {storageMessage && <p className="storage-message warning" role="status">{storageMessage}</p>}
       {importError && <p className="storage-message warning" role="alert">{importError}</p>}
-      {view === 'library' ? <StudyLibrary openPaper={choose} saved={library} /> : !paper || !current ?
-        <ChatHome key={project?.id + ':' + conversation} field={project?.field || homeField} discipline={project?.discipline ?? homeDiscipline} project={project} style={style}
-          connection={connection} model={activeModel} openSettings={() => modelDialog.current?.showModal()}
-          openImport={openImport} openLibrary={() => setView('library')} upload={(file) => void upload(file)} importBusy={importBusy} openRecent={(next) => {
+      {modelIssue && view === 'workspace' && <p className="storage-message warning" role="status">{modelIssue}</p>}
+      {view === 'library' ? <StudyLibrary openPaper={choose} saved={library} owner={owner} tab={libraryTab} onTab={setLibraryTab} onUpload={() => dropInput.current?.click()}
+          onRemove={(item) => { setHistoryAction({ item, action: 'delete' }); historyDialog.current?.showModal() }} /> : !paper || !current ?
+        <ChatHome key={project?.id + ':' + conversation} field={project?.field || 'custom'} discipline={project?.discipline} project={project} style={style}
+          connection={connection} model={activeModel} openSettings={openSettings}
+          openImport={() => dropInput.current?.click()} openLibrary={() => { setLibraryTab('preset'); setView('library') }} upload={openImport} importBusy={importBusy} openRecent={(next) => {
             if (list[0]) { choose(list[0]); setTab(next) } else setView('library')
           }} /> : <div className={`shell reader-shell ${tab === 'read' ? 'reader-deep' : ''}`}>
       <main>
@@ -330,11 +332,11 @@ function WorkspaceApp({ user, onUser }: { user: User | null; onUser: (user: User
         <nav className="tabs" aria-label="论文阅读视图">{tabs.map(([id, label, Icon]) => <button type="button" key={id} aria-pressed={tab === id} onClick={() => { setTab(id); setError('') }}><Icon size={16} />{label}</button>)}</nav>
         <div className="feedback" aria-live="polite">{busy && <div className="notice" role="status">{busy}<button onClick={() => { request.current?.abort(); setBusy('') }}>取消</button></div>}{error && <div className="warning" role="alert">{error}</div>}</div>
         <div hidden={tab !== 'read'}><DeepReader key={paper.id} paper={paper} owner={owner} style={style} model={activeModel} connection={connection}
-          openSettings={() => modelDialog.current?.showModal()} /></div>
+          openSettings={openSettings} /></div>
         {(tab === 'compare' || tab === 'graph') && <section className="tab-content discovery">
           <div className="source-heading"><h2>{tab === 'compare' ? '查找同类研究' : '论文在领域中的位置'}</h2>
             {activeModel ? <button className="primary" disabled={!!busy} onClick={findRelated}><Search size={15} />{discovery ? '重新检索' : '检索并分析'}</button>
-              : <button className="primary" onClick={() => modelDialog.current?.showModal()}>连接模型</button>}
+              : <button className="primary" onClick={() => openSettings()}>连接模型</button>}
           </div>
           <p className="subtle">将题名和部分原文发送给当前模型，生成检索词后在 Crossref 查找论文。</p>
           {discovery && <p className="subtle" role="status">检索词 · {discovery.query}</p>}
@@ -351,7 +353,7 @@ function WorkspaceApp({ user, onUser }: { user: User | null; onUser: (user: User
               <label className="question">同领域论文<select value={comparisonId} required onChange={(event) => { setComparisonId(event.target.value); setComparison(null) }}><option value="">选择一篇论文</option>
                 {sameField.map((item) => <option key={item.id} value={item.id}>{item.short}</option>)}</select></label>
               <div className="form-actions"><span>将当前文段与所选论文的前 3 段发送给当前模型。</span><button className="primary" disabled={!activeModel || !!busy}><Columns3 size={15} /> 对照讲解</button></div>
-            </form> : <div className="empty">论文库中暂无同领域的另一篇论文。<button className="text-button" onClick={openImport}> 导入论文</button></div>}
+            </form> : <div className="empty">论文库中暂无同领域的另一篇论文。<button className="text-button" onClick={() => openImport()}> 导入论文</button></div>}
             {comparison && <div className="ai-result"><div className="kicker">{comparison.model} · 引文已核对</div><h3>方法与证据</h3><p>{comparison.explanation}</p><h3>具体差异</h3><p>{comparison.example}</p><h3>证据范围</h3><p>{comparison.limits}</p>
               <ul>{comparison.evidence.map((ref, i) => <li key={i}>{ref.id === 'a' ? '论文 A' : '论文 B'} · {ref.quote}</li>)}</ul></div>}
           </section>
@@ -372,7 +374,10 @@ function WorkspaceApp({ user, onUser }: { user: User | null; onUser: (user: User
       </aside>}
     </div>}
     </div></div>
-    <Preferences dialog={preferences} user={user} onUser={onUser} theme={theme} onTheme={changeTheme} style={style} onStyle={(next) => {
+    <Preferences dialog={preferences} user={user} onUser={onUser} theme={theme} onTheme={changeTheme} tab={settingsTab} onTab={setSettingsTab}
+      modelPanel={<ModelSettings key={settingsVersion + ':' + (connection?.model || 'default')}
+        current={connection} fallback={fallback} remembered={remembered} onChange={changeModel} onClose={() => preferences.current?.close()} />}
+      style={style} onStyle={(next) => {
       setStyle(next)
       try { rememberStyle(owner, next) } catch { setStorageMessage('浏览器未能保存讲解偏好。') }
     }} openAccount={() => account.current?.showModal()} />
@@ -392,16 +397,15 @@ function WorkspaceApp({ user, onUser }: { user: User | null; onUser: (user: User
     <dialog ref={modal} onCancel={(event) => { if (importBusy) event.preventDefault() }}>
       <form onSubmit={addPaper}>
         <header><h2>导入论文</h2><button type="button" className="icon-button" aria-label="关闭" disabled={importBusy} onClick={() => modal.current?.close()}><X size={19} /></button></header>
-        <label>学科领域<select value={importField} disabled={!!project} onChange={(event) => { setImportField(event.target.value as Field); setImportDiscipline('') }}>{Object.entries(fields).map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select></label>
-        <DisciplineSelect field={importField} value={importDiscipline} onChange={setImportDiscipline} disabled={!!project} />
         <label>选择文件（PDF、DOCX、Markdown、TXT）<input type="file" accept=".pdf,.docx,.md,.txt" onChange={(event) => setFile(event.target.files?.[0])} disabled={importBusy} /></label>
+        {file && <p className="subtle">已选择 {file.name}</p>}
+        <label>学科领域<select required value={importField} disabled={!!project || importBusy} onChange={(event) => { setImportField(event.target.value as Field | ''); setImportDiscipline('') }}><option value="">请选择领域</option>{Object.entries(fields).map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select></label>
+        {importField && <DisciplineSelect field={importField} value={importDiscipline} onChange={setImportDiscipline} disabled={!!project || importBusy} />}
         <label>或粘贴论文标题<input value={importName} maxLength={180} onChange={(event) => setImportName(event.target.value)} disabled={!!file || importBusy} /></label>
         <label>论文正文<textarea value={importText} rows={4} maxLength={100000} onChange={(event) => setImportText(event.target.value)} disabled={!!file || importBusy} /></label>
         {importError && <p className="warning" role="alert">{importError}</p>}
-        <button className="primary" disabled={importBusy}>{importBusy ? '正在提取文段…' : '导入到论文库'}</button>
+        <button className="primary" disabled={importBusy || !importField || (!file && !importText.trim())}>{importBusy ? '正在提取文段…' : '导入到论文库'}</button>
       </form>
     </dialog>
-    <ModelSettings key={connection ? 'custom-' + connection.base + connection.model : 'default'} dialog={modelDialog}
-      current={connection} fallback={fallback} remembered={remembered} onChange={changeModel} />
   </>
 }
