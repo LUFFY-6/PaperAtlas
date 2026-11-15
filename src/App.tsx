@@ -92,6 +92,7 @@ function WorkspaceApp({ user, onUser }: { user: User | null; onUser: (user: User
   }, [owner])
 
   const [library, setLibrary] = useState<Paper[]>([])
+  const recent = project ? library.find((item) => item.projectId === project.id) : library[0]
   const [paper, setPaper] = useState<Paper>()
   const [tab, setTab] = useState<Tab>('read')
   const [source, setSource] = useState('')
@@ -142,17 +143,16 @@ function WorkspaceApp({ user, onUser }: { user: User | null; onUser: (user: User
     return () => { active = false }
   }, [owner])
   useEffect(() => {
-    const latest = library[0]
     setRecentProgress('')
-    if (!latest) return
+    if (!recent) return
     let active = true
-    const sections = readerSections(latest.blocks).filter((part) => !part.kind)
-    void loadReading<{ completed?: number; lessons?: Record<string, unknown> }>(latest.id, owner).then((state) => {
+    const sections = readerSections(recent.blocks).filter((part) => !part.kind)
+    void loadReading<{ completed?: number; lessons?: Record<string, unknown> }>(recent.id, owner).then((state) => {
       const done = state?.completed ?? sections.filter((part) => part.batches.every(([block]) => state?.lessons?.[block.id])).length
       if (active) setRecentProgress(`已读 ${done}/${sections.length} 节`)
     }).catch(() => {})
     return () => { active = false }
-  }, [owner, library, showChat])
+  }, [owner, recent, showChat])
 
   useEffect(() => { json<{ live: boolean; model: string }>('/api/config').then((info) => setFallback(info.live ? info.model : '')).catch(() => {}) }, [])
   useEffect(() => {
@@ -410,7 +410,6 @@ function WorkspaceApp({ user, onUser }: { user: User | null; onUser: (user: User
 
   const current = paper?.blocks.find((block) => block.id === source) ?? paper?.blocks[0]
   const list = project ? library.filter((item) => item.projectId === project.id) : library
-  const recent = list[0]
   const visibleConversations = project ? conversations.filter((item) => item.projectId === project.id) : conversations
   const sameField = library.filter((item) => item.field === paper?.field && item.id !== paper?.id)
   const comparisonTarget = comparisonPaper ?? sameField.find((item) => item.id === comparisonId)
@@ -474,7 +473,7 @@ function WorkspaceApp({ user, onUser }: { user: User | null; onUser: (user: User
           effort={connection ? normalizeEffort(connection.effort) : defaultEffort} onEffort={changeEffort} onModel={(model) => { if (connection) changeModel({ ...connection, model }, remembered) }}
           connection={connection} model={activeModel} openSettings={openSettings}
           openImport={() => dropInput.current?.click()} openLibrary={(tab) => { setLibraryTab(tab); setView('library') }} upload={openImport} importBusy={importBusy}
-          recent={recent} recentProgress={recent?.id === library[0]?.id ? recentProgress : ''} openRecent={() => { if (recent) { choose(recent); setTab('read') } }} newConversation={newConversation} /> : <div className={`shell reader-shell ${tab === 'read' ? 'reader-deep' : ''}`}>
+          recent={recent} recentProgress={recentProgress} openRecent={() => { if (recent) { choose(recent); setTab('read') } }} newConversation={newConversation} /> : <div className={`shell reader-shell ${tab === 'read' ? 'reader-deep' : ''}`}>
       <main>
         <div className="paper-header"><div className="paper-meta"><span className={`field-tag ${paper.field}`}>{disciplineLabel(paper.field, paper.discipline)}</span><span>{paper.format || `${paper.venue} · ${paper.year}`}</span></div>
           <h1>{paper.title}</h1>
