@@ -2,6 +2,7 @@ import { useState, type FormEvent, type RefObject } from 'react'
 import { X } from 'lucide-react'
 import { disciplineOptions, readingStyles, type Field, type ReadingStyle } from './papers'
 import { api, type User } from './Workspace'
+import type { Theme } from './theme'
 
 export function DisciplineSelect({ field, value, onChange, disabled, className }: {
   field: Field; value: string; onChange: (value: string) => void; disabled?: boolean; className?: string
@@ -13,9 +14,10 @@ export function DisciplineSelect({ field, value, onChange, disabled, className }
     </select>}</label>
 }
 
-export function Preferences({ dialog, user, onUser, style, onStyle, openAccount }: {
+export function Preferences({ dialog, user, onUser, style, onStyle, openAccount, theme, onTheme }: {
   dialog: RefObject<HTMLDialogElement | null>; user: User | null; onUser: (user: User) => void;
   style: ReadingStyle; onStyle: (style: ReadingStyle) => void; openAccount: () => void
+  theme: Theme; onTheme: (theme: Theme) => void
 }) {
   const [status, setStatus] = useState('')
   const [error, setError] = useState('')
@@ -35,6 +37,9 @@ export function Preferences({ dialog, user, onUser, style, onStyle, openAccount 
   return <dialog ref={dialog} className="preferences-dialog" aria-labelledby="preferences-title"
     onClose={() => { setStatus(''); setError('') }}>
     <header><h2 id="preferences-title">设置</h2><button className="icon-button" aria-label="关闭设置" onClick={() => dialog.current?.close()}><X size={18} /></button></header>
+    <fieldset><legend>主题</legend><div className="style-options">
+      {(['light', 'dark', 'system'] as const).map((id, i) => <label key={id}><input type="radio" name="theme" checked={theme === id} onChange={() => onTheme(id)} />{['浅色', '深色', '跟随系统'][i]}</label>)}
+    </div></fieldset>
     <fieldset><legend>讲解偏好</legend><div className="style-options">
       {Object.entries(readingStyles).map(([id, name]) => <label key={id}><input type="radio" name="reading-style" checked={style === id}
         onChange={() => onStyle(id as ReadingStyle)} />{name}</label>)}

@@ -38,6 +38,7 @@ export function PdfOriginal({ original, page, quote }: { original: Blob; page: n
   const layer = useRef<HTMLDivElement>(null)
   const [pdf, setPdf] = useState<PDFDocumentProxy>()
   const [width, setWidth] = useState(0)
+  const [tint, setTint] = useState(true)
   const [loadError, setLoadError] = useState(false)
   const [render, setRender] = useState<{ page: number; ok: boolean; scale: number; unit: number }>()
   const [marks, setMarks] = useState<CSSProperties[]>([])
@@ -93,7 +94,11 @@ export function PdfOriginal({ original, page, quote }: { original: Blob; page: n
     if (next.length) range.startContainer.parentElement?.scrollIntoView({ block: 'nearest' })
   }, [page, quote, render])
   const error = loadError || render?.page === page && !render.ok
-  return <div className="pdf-original" ref={wrapper}>
+  return <div className="pdf-original" ref={wrapper} data-tint={tint}>
+    <div className="original-tools" aria-label="纸张显示">
+      <button className="secondary" aria-pressed={!tint} onClick={() => setTint(false)}>原色</button>
+      <button className="secondary" aria-pressed={tint} onClick={() => setTint(true)}>护眼</button>
+    </div>
     {error ? <p role="alert">原版暂时无法渲染，可打开原文件。</p> : render?.page !== page && <p role="status">正在渲染 PDF 第 {page} 页…</p>}
     <div className="pdf-surface" hidden={error || render?.page !== page} style={{
       '--scale-factor': render?.scale ?? 1, '--user-unit': render?.unit ?? 1,
@@ -123,7 +128,7 @@ export function WordOriginal({ original, quote, anchor, onSelection }: OriginalT
       for (const link of preview.body.querySelectorAll('a[href]')) {
         if (!link.getAttribute('href')?.startsWith('#')) link.removeAttribute('href')
       }
-      if (!disposed) setHtml(`<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; base-uri 'none'">${preview.head.innerHTML}<style>body{margin:0}.docx-wrapper{align-items:flex-start;padding:8px;background:#eef1ed}::highlight(word-evidence){background:#ffe096}</style></head><body>${preview.body.innerHTML}</body></html>`)
+      if (!disposed) setHtml(`<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; base-uri 'none'">${preview.head.innerHTML}<style>:root{--page:#f7f4e9;--evidence:#ffd98a}body{margin:0;background:var(--page);color:#1c1e1b}.docx-wrapper{align-items:flex-start;padding:8px;background:var(--page)}::highlight(word-evidence){background:var(--evidence)}</style></head><body>${preview.body.innerHTML}</body></html>`)
     }).catch(() => { if (!disposed) setError(true) })
     return () => { disposed = true }
   }, [original])
@@ -161,7 +166,7 @@ export function WordOriginal({ original, quote, anchor, onSelection }: OriginalT
     return () => { registry?.delete('word-evidence') }
   }, [loaded, quote, anchor])
   return error ? <p role="alert">无法预览 Word 文档，可下载原件。</p>
-    : html ? <iframe className="word-original" title="Word 原文版式" ref={frame} sandbox="allow-same-origin" srcDoc={html} onLoad={() => setLoaded(true)} />
+    : html ? <iframe className="word-original" data-tint="true" title="Word 原文版式" ref={frame} sandbox="allow-same-origin" srcDoc={html} onLoad={() => setLoaded(true)} />
       : <p role="status">正在渲染 Word 文档…</p>
 }
 

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
-import { ArrowUpRight, BookOpen, CloudUpload, ChevronRight, Columns3, Ellipsis, FileText, Folder, Layers3, Network, Plug, Plus, Search, Settings, X } from 'lucide-react'
+import { ArrowUpRight, BookOpen, CloudUpload, ChevronRight, Columns3, Ellipsis, FileText, Folder, Layers3, Moon, Network, Plug, Plus, Search, Settings, Sun, X } from 'lucide-react'
 import { DeepReader } from './DeepReader'
 import { ModelSettings, type Connection } from './ModelSettings'
 import { disciplineLabel, fields, normalizeField, type Field, type Paper, type Related, type Project } from './papers'
@@ -11,6 +11,7 @@ import { fileDrop } from './drop'
 import { StudyLibrary } from './StudyLibrary'
 import { DisciplineSelect, Preferences } from './Preferences'
 import { readingSections } from './sections'
+import { applyTheme, readTheme, type Theme } from './theme'
 
 const tabs = [['read', '全文精读', BookOpen], ['compare', '方法对比', Columns3], ['graph', '论文关系', Network], ['source', '文段', FileText]] as const
 type Tab = typeof tabs[number][0]
@@ -30,6 +31,19 @@ export function App() {
 }
 
 function WorkspaceApp({ user, onUser }: { user: User | null; onUser: (user: User | null) => void }) {
+  const [theme, setTheme] = useState(readTheme)
+  const [systemDark, setSystemDark] = useState(() => matchMedia('(prefers-color-scheme: dark)').matches)
+  useEffect(() => {
+    const media = matchMedia('(prefers-color-scheme: dark)')
+    const change = () => setSystemDark(media.matches)
+    media.addEventListener('change', change)
+    return () => media.removeEventListener('change', change)
+  }, [])
+  function changeTheme(next: Theme) {
+    applyTheme(next)
+    setTheme(next)
+  }
+  const dark = theme === 'dark' || theme === 'system' && systemDark
   const owner = user?.id ?? ''
   const [conversation, setConversation] = useState(0)
   const [view, setView] = useState<'workspace' | 'library'>('workspace')
@@ -267,6 +281,7 @@ function WorkspaceApp({ user, onUser }: { user: User | null; onUser: (user: User
         <button aria-current={view === 'library' ? 'page' : undefined} onClick={() => setView('library')}>学习库</button>
       </nav>
       <button className="model-trigger" onClick={() => modelDialog.current?.showModal()}><Plug size={16} /><span>模型设置</span></button>
+      <button className="theme-toggle" aria-label={dark ? '切换浅色主题' : '切换深色主题'} onClick={() => changeTheme(dark ? 'light' : 'dark')}>{dark ? <Sun size={16} /> : <Moon size={16} />}</button>
       <button className="account-trigger" onClick={() => account.current?.showModal()}>{user?.displayName || user?.name || '登录 / 注册'}</button>
     </header>
     <input type="file" hidden ref={dropInput} accept=".pdf,.docx,.md,.txt" onChange={(event) => {
@@ -349,15 +364,15 @@ function WorkspaceApp({ user, onUser }: { user: User | null; onUser: (user: User
         </div>}
       </main>
       {tab !== 'read' && <aside className="evidence" aria-label="论文证据">
-        <div className="rail-heading"><FileText size={16} /><h2>{paper.url ? '阅读笔记' : '原文位置'}</h2></div>
-        <p className="subtle">{paper.url ? '按原文位置整理的预设笔记。' : '按文件提取的文字片段。'}</p>
-        <div className="evidence-list">{paper.blocks.map((block) => <button key={block.id} className={source === block.id ? 'source-active' : ''} aria-current={source === block.id ? 'true' : undefined} onClick={() => openSource(block.id)}>
-          <span>{block.title}</span><ChevronRight size={15} />
+        <div className="rail-heading"><FileText size={16} /><h2>阅读原文</h2></div>
+        <p className="subtle">{paper.format === 'PDF' ? '按页查看原文，点击页码跳转。' : '按提取段落定位。'}</p>
+        <div className="evidence-list">{paper.blocks.map((block, index) => <button key={block.id} className={source === block.id ? 'source-active' : ''} aria-current={source === block.id ? 'true' : undefined} onClick={() => openSource(block.id)}>
+          <span>{paper.format === 'PDF' ? block.title : `文段 ${index + 1}`}</span><ChevronRight size={15} />
         </button>)}</div>
       </aside>}
     </div>}
     </div></div>
-    <Preferences dialog={preferences} user={user} onUser={onUser} style={style} onStyle={(next) => {
+    <Preferences dialog={preferences} user={user} onUser={onUser} theme={theme} onTheme={changeTheme} style={style} onStyle={(next) => {
       setStyle(next)
       try { rememberStyle(owner, next) } catch { setStorageMessage('浏览器未能保存讲解偏好。') }
     }} openAccount={() => account.current?.showModal()} />

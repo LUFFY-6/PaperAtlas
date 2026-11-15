@@ -59,7 +59,7 @@ export function ChatHome({ field, discipline, style, connection, model, openSett
             if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); event.currentTarget.form?.requestSubmit() }
           }} />
         <div className="composer-actions">
-          <button className="chat-attach" type="button" disabled={importBusy} onClick={openImport}><Paperclip size={16} />{importBusy ? '正在读取论文…' : '拖入或添加论文'}</button>
+          <button className="chat-attach" type="button" disabled={importBusy} aria-label="添加论文" title="拖入或点击添加论文" onClick={openImport}><Paperclip size={16} /></button>
           <button type="button" className="chat-model" onClick={openSettings}>{model || '连接模型'}</button>
           <button className="chat-send" aria-label="发送消息" disabled={busy || !draft.trim()}><ArrowUp size={19} /></button>
         </div>
