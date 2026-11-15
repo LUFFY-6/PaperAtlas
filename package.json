@@ -13,6 +13,7 @@
     "test": "node --test server/reader.test.ts"
   },
   "dependencies": {
+    "docx-preview": "^0.4.1",
     "lucide-react": "^0.468.0",
     "mammoth": "^1.12.0",
     "pdfjs-dist": "^6.5.438",

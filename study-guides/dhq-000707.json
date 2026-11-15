@@ -1,0 +1,286 @@
+{
+  "lessons": {
+    "1-1": {
+      "why": "作者先交代论文题目、发表年份与刊物，使读者能把讨论放回数字人文和数字文学的学术语境中，并辨认其研究对象与批评视角。",
+      "explanation": "作品是 Lillian-Yvonne Bertram 于2019年出版的诗集《Travesty Generator》，本文作者 Zach Whalen 在数字人文刊物 DHQ 中讨论它。标题以“拒绝被算法抹除”提出政治性问题；仅凭篇首尚不能确定具体诗歌分析方法，需结合后文理解其与种族主义、算法诗学的关联。",
+      "result": "篇首建立研究对象、作者身份与发表场域，为后续的数字文学细读和批评论证定位；它本身尚未提供诗歌分析或实证发现。",
+      "example": "读者看到一篇发表于数字人文刊物、题为“拒绝被算法抹除”的文章，可以先预期它会讨论计算程序如何参与文学表达及权力批评，但不能仅由标题断定作者的具体结论。",
+      "limits": "标题和刊物信息只能提示研究语境，不能证明诗集的算法机制、政治立场或读者效果。",
+      "evidence": [
+        {
+          "id": "1-1",
+          "quote": "“Any Means Necessary to Refuse Erasure by Algorithm:” Lillian-Yvonne"
+        }
+      ],
+      "model": "学习库预生成 · gpt-6.1-sol"
+    },
+    "2-1": {
+      "why": "摘要先区分 Bertram 与早期算法诗的“travesty”含义，再以两首诗概述文章主张，说明为何需要把程序机制与种族暴力的具体历史并读。",
+      "explanation": "作者把诗集标题追溯到 Kenner 与 O’Rourke 的 Pascal 程序：它按源文本中字符 n 元串的频率生成伪文本。摘要指出，Bertram 将“滑稽仿作”的形式转为对美国种族主义现实的指涉，并以《Counternarratives》的渐进指向及《three_last_words》的全排列累积、运行停滞，说明算法形式如何承载见证与抵抗。",
+      "result": "摘要提出全篇核心解读：Bertram 借用计算诗生成机制，将看似抽象的算法过程具体化为对种族压迫的批评；并预告后文将细读个别诗作。",
+      "example": "若程序不断排列“I can’t breathe”的词语，读者可同时注意两层：排列规则如何运作，以及诗题短语如何使程序的累积与停滞联系到特定死亡事件。",
+      "limits": "摘要的程序效果与政治寓意属于作者的概述性解释；此处未展示代码、运行测试或读者反应，不能据此确认所有实现细节。",
+      "evidence": [
+        {
+          "id": "2-1",
+          "quote": "modification, the memory required to produce all permutations of the phrase, “I can’t breathe”, is"
+        }
+      ],
+      "model": "学习库预生成 · gpt-6.1-sol"
+    },
+    "2-2": {
+      "why": "作者从《A NEW SERMON ON THE WARPLAND》的文本与谱系切入，既展示算法诗如何受模板约束，也引出批判代码研究如何把程序视为可阐释的文化文本。",
+      "explanation": "文中引用诗节，说明读者可由重复句式推测其模板为固定框架加可替换词项；作者又追溯 Brooks、Knowles 与 Tenney 的创作关联，强调继承关系参与作品意义。随后介绍批判代码研究：它以文学阐释阅读代码，并提醒代码同时面向执行程序的机器和解释文本的人，二者的“阅读”并不等同。",
+      "result": "本节把形式分析推进到批评方法：算法模板和词库不是中性容器，而是有历史脉络的表达框架；代码的意义也不只在可见输出或不可见程序一端。",
+      "example": "读者看到“ A NATION OF … ANY MEANS NECESSARY …”反复出现，可先识别固定框架，再考察替换词如何改变意象；但词语选择的政治意义仍需结合诗作语境论证。",
+      "limits": "模板是作者依据诗句作出的推断，摘录没有给出完整源代码；谱系关联也不意味着作品意义可还原为前作影响。",
+      "evidence": [
+        {
+          "id": "2-2",
+          "quote": "The passage quoted here is from Lillian-Yvonne Bertram’s poem, “A NEW SERMON ON THE WARPLAND”, which is"
+        }
+      ],
+      "model": "学习库预生成 · gpt-6.1-sol"
+    },
+    "2-3": {
+      "why": "作者进一步处理代码诗批评中的解释难题：生成结果可能无限或难以穷尽，因此需要说明为何代码本身也能成为细读对象。",
+      "explanation": "作者借 Cayley 与 Marino 的论述区分人类对代码的阐释和机器对代码的执行，并指出两种过程不能简单互换。对有限代码生成近乎无限文本的诗，逐一阅读输出并不可行，代码便成为重要的诗歌文本；不过程序、可能性与实际生成结果仍彼此关联，不能把代码当作孤立答案。",
+      "result": "本节为后续代码诗分析确立方法论：批评者需在代码、生成过程与可读输出之间调整注意力，而非只把代码当作作品表面之后的技术说明。",
+      "example": "一首程序可生成无数排列的诗，研究者可以分析其循环和词语集合来说明可能性结构，同时选取实际输出作文本细读；两种材料回答的问题不同。",
+      "limits": "“代码必须是诗”是作者在特定生成条件下提出的方法判断，并非适用于所有数字作品的定论；摘录也未展开具体代码实例。",
+      "evidence": [
+        {
+          "id": "2-3",
+          "quote": "videogame's source code offers a peak behind the curtain, reading a poem's source code requires a more subtle"
+        }
+      ],
+      "model": "学习库预生成 · gpt-6.1-sol"
+    },
+    "2-4": {
+      "why": "作者说明自身位置与数字诗的媒介特性，再交代研究目标和算法诗的历史参照，以界定解读责任及全篇论证范围。",
+      "explanation": "作者承认自己相对种族暴力经验具有特权，提醒读者其阐释不能替代受压迫群体的经验。随后把数字诗描述为由框架、语言数据库、输出选择构成的创作；程序的易逝性使印入纸本的输出同时具有策展意义。最后追溯《Travesty Generator》与 Kenner、O’Rourke 伪文本程序的关系，并提出 Bertram 将形式创新用于当代种族现实，而非止于新奇。",
+      "result": "本节建立伦理自省、媒介框架和历史背景，解释本文为何以具体诗作细读来论证 Bertram 对数字诗传统的改写；这里提出研究主张，尚非独立实测结果。",
+      "example": "若某诗程序可以生成许多文本，诗人将其中一段选入纸本，读者可把它既看作程序输出，也看作作者对某次生成结果的选择；但选择动机仍须文本或作者材料支持。",
+      "limits": "作者的位置声明有助于限定阐释责任，却不能消除解释偏差；关于诗集重要性及其政治效果的评价也不能仅由此段证明。",
+      "evidence": [
+        {
+          "id": "2-4",
+          "quote": "language to fit into that frame. This characterization of digital poetry consisting of a “frame” is a formulation Carole"
+        }
+      ],
+      "model": "学习库预生成 · gpt-6.1-sol"
+    },
+    "2-5": {
+      "why": "本文研究数字文学作品《Travesty Generator》，置于电子文学的代码诗与生成诗传统中。作者追溯程序名“Travesty”的双重语义，以说明作品如何把形式游戏转成政治批评。",
+      "explanation": "Hartman称早期Travesty程序能以统计噪声扰乱写作习惯；作者借此交代生成文本的文学谱系。随后对照Kenner与O’Rourke将“travesty”当作戏仿的用法，以及Zimmerman案律师把它说成司法闹剧的修辞，指出同一词在此关联真实的不公。",
+      "result": "本段建立作品的历史与政治语境：标题既指向电子文学程序传统，也预告对司法叙事及其不公的批判。",
+      "example": "若一个程序把“正义”与随机词语拼接，旧式戏仿读法可能只关注荒诞效果；结合Zimmerman案语境，则还须追问谁有权定义事件为悲剧或闹剧。",
+      "limits": "律师的言论只证明一种当事方修辞，不能代表公众共识；标题关联也属于作者的批评性阐释，并非程序本身必然表达的意义。",
+      "evidence": [
+        {
+          "id": "2-5",
+          "quote": "“travesty generator,” invokes other resonances that raise the stakes in computer-generated poetry. Whereas for Kenner"
+        }
+      ],
+      "model": "学习库预生成 · gpt-6.1-sol"
+    },
+    "2-6": {
+      "why": "作者要解释《Counternarratives》如何以累积、空缺和程序结构抵抗单一事件叙事，并为随后分析代码来源及文本生成机制建立形式基础。",
+      "explanation": "作者先引诗句，说明各节以省略号连接碎片、逐页累积，至第13节留白打断扩张模式；再将搜索引擎提示、自然意象与生成器联系起来。接着对照Montfort的《Through The Park》：循环产生八节，每节随机保留7至11句，删除其余句子，含混由读者补成叙事。",
+      "result": "本节把诗的可见形式与算法操作联系起来，并展示删句如何制造多义性；Montfort文本作为比较基线，帮助作者推测Bertram的改写策略。",
+      "example": "同一组句子若随机留下“女孩穿着挑逗”与“男子握拳”，读者可能推断暴力；删去这些句子，剩余片段则可能被理解为普通相遇。",
+      "limits": "Bertram未公开该诗源代码，作者不能验证其具体程序；随机删句的Montfort分析也只能提供比较框架，不能直接证明Bertram采用完全相同的机制。",
+      "evidence": [
+        {
+          "id": "2-7",
+          "quote": "ied narrative. What that narrative is will depend on which lines end up"
+        }
+      ],
+      "model": "学习库预生成 · gpt-6.1-sol"
+    },
+    "2-9": {
+      "why": "作者转向书首诗，比较Montfort的排列组合程序与Bertram的政治性改写，借注释和代码的并置说明诗如何同时作为可读文本与可执行程序运作。",
+      "explanation": "作者追溯Montfort《I AM THAT I AM》及Gysin排列诗传统，说明程序递归排列AEIOU，产生全部120种顺序；再指出Bertram沿用相近代码结构，却把“the knife”等词逐行加入Python注释，使注释累积成关于Eric Garner之死与轻微违法的叙述。代码不执行注释，但读者能把它读作诗。",
+      "result": "本节揭示同一算法形式可因输入、注释与历史指涉而改变意义：Montfort排列元音，Bertram则以注释构成对警察暴力及其辩护话语的纪念性回应。",
+      "example": "程序正文只负责排列字符，注释逐行出现“刀”“他们”“绞死他”等词。运行时这些注释不产生计算结果，阅读时却构成不断加重的政治叙事。",
+      "limits": "文本关联Eric Garner及“法律饰物”的解释依赖历史背景与词语联想；注释与Trinket.io的同名联系可能是偶合，不能视为作者明确意图。",
+      "evidence": [
+        {
+          "id": "2-9",
+          "quote": "is both the poetic associations as well as the geopolitical identity of this Orlando suburb."
+        }
+      ],
+      "model": "学习库预生成 · gpt-6.1-sol"
+    },
+    "2-10": {
+      "why": "作者进一步说明《three_last_words》的双重阅读机制，解释代码注释怎样把算法结构改造成对Eric Garner与George Floyd死亡的纪念，并与Montfort作品形成意义反转。",
+      "explanation": "作者指出诗既可按诗行阅读，也可执行为排列程序；代码行定义递归，井号后的注释不参与执行，却逐步拼出“他们把他挂在刀上”等句。作者将“我不能呼吸”联系到Garner与Floyd，并结合Garner因售卖散装香烟遭拘捕及相关嘲讽口号，解读“法律饰物”为轻微违法被用来合理化暴力。",
+      "result": "本节展示程序功能与文学意义并行：排列算法本身生成形式，注释累积则把“最后的话”从Montfort的开端结构转成对受害者终结的悼念。",
+      "example": "读者运行排列函数时只看到字符顺序变化；不运行而沿注释逐行阅读，则会看到一条关于执法、轻罪与死亡的叙述，两个层次彼此并存。",
+      "limits": "“法律饰物”及其与警察暴力的联系是作者结合语境作出的解读；片段展示了形式机制，但不足以单独证明所有读者都会得到相同政治含义。",
+      "evidence": [
+        {
+          "id": "2-10",
+          "quote": "word at a time over the course of the code until the completed comment observes, “ #the   knife   they   hung   him"
+        }
+      ],
+      "model": "学习库预生成 · gpt-6.1-sol"
+    },
+    "2-8": {
+      "why": "作者将伯特伦的《Counternarratives》与蒙福特的《Through the Park》对读，旨在说明算法诗如何从抽象的语言暴力转向可追溯的种族暴力语境。",
+      "explanation": "作品属于算法诗及数字文学批评传统。文本证据是蒙福特写“slutty dress”，伯特伦则改写为搜索提示“People also ask”；作者据此将前者解读为泛化的受害者责备，将后者联系到特雷冯·马丁案及真实搜索建议。作者还指出，“he”未明确指谁，因此句子也可能指齐默尔曼，保留了指称歧义。",
+      "result": "本节论证改写不只是形式借用：现实搜索语句把算法语言与种族化叙事相连。不过，文本中的具体指涉并未完全确定，批评力量部分来自这种未决状态。",
+      "example": "比较“她穿得暴露”与搜索提示“他当时穿什么”：前者容易把暴力归因于受害者穿着，后者则让读者追问“他”是谁，以及为何衣着会成为搜索焦点。",
+      "limits": "搜索建议和作者对案件的联系支持语境化解读，但诗句没有点名当事人；不能据此断定唯一指涉或概括所有搜索引擎机制。",
+      "evidence": [
+        {
+          "id": "2-8",
+          "quote": "conveyed in Bertram's “People also ask...” phrasing, which quotes a google search suggestion. In the context created"
+        }
+      ],
+      "model": "学习库预生成 · gpt-6.1-sol"
+    },
+    "2-11": {
+      "why": "作者比较两首诗的代码实现，意在展示微小的程序改动如何改变输出形态，并使计算增长成为诗歌表达的一部分。",
+      "explanation": "作品处于代码诗与算法改写的语境，参照蒙福特的排列程序。作者指出，蒙福特用切片 result[i:] 仅拼接当前位置之后的部分；伯特伦保留整个 result，故字符串逐步变长。另一个差异是输出列表的方式，使字符排列呈现杂乱外观，最终对“I can't breathe”运行时触发内存错误。",
+      "result": "本节把代码差异、输出版式和计算失败连成一条形式论证：同样的排列思路，因拼接规则不同而产生增长失衡，并将技术限制纳入诗的意义。",
+      "example": "若每轮只追加尚未处理的字符，结果长度受控；若每轮都把完整旧结果再拼接，字符串会越来越长，打印“breathe”的排列就可能远超页面可容纳范围。",
+      "limits": "作者描述了代码机制与预期输出，但具体运行环境影响内存错误；不能把特定设备上的失败当成所有机器必然相同的表现。",
+      "evidence": [
+        {
+          "id": "2-11",
+          "quote": "iterates through the   elements   list (a string of text characters, in this case) the newly-permutated line   yields   a   +"
+        }
+      ],
+      "model": "学习库预生成 · gpt-6.1-sol"
+    },
+    "2-12": {
+      "why": "作者亲自运行伯特伦的程序，目的是把文本中预示的失败落实为可观察的计算体验，并说明技术限制怎样进入阅读。",
+      "explanation": "作者分别在 Colab 和本地 Jupyter 执行代码，记录内存占用上升、程序崩溃及电脑响应变慢。随后借蒙福特作品和拉维涅的计算艺术作比较，将这种干扰称为对注意力的“recapture”：技术过程打断常规阅读，使读者注意到机器环境。但作者也承认，计算机故障与真实死亡的类比可能显得轻率。",
+      "result": "本节提供的是作者的运行观察和批评解释，而非受控实验。它说明程序执行可让读者感受资源耗尽的过程，并为讨论诗歌如何中断阅读铺垫。",
+      "example": "读者运行一个不断占用内存的程序，看到指示条逐渐变色、界面迟缓，便不再只读诗句，而开始注意运行本身及其带来的焦虑。",
+      "limits": "这是有限设备上的个人体验，缺少系统性能对照；由电脑变慢推及读者必然感受或等同现实暴力，属于解释性类比而非经验结论。",
+      "evidence": [
+        {
+          "id": "2-12",
+          "quote": "panic in a way that was hauntingly effective. This poem is directly addressing the physical environment of computing in"
+        }
+      ],
+      "model": "学习库预生成 · gpt-6.1-sol"
+    },
+    "2-13": {
+      "why": "作者借“记忆”理论解释程序耗尽内存的形式意义，并转入下一首作品的谱系，说明技术失败与文学来源如何共同构成批评对象。",
+      "explanation": "文章承接伯特伦的《three_last_words》，引用邱慧金关于电脑记忆兼具存储与易逝、且须持续维持的论述。作者把 RAM 的不稳定与诗中排列运算的失败联系起来，解读为读者重演并见证暴力创伤；随后转向《A NEW SERMON ON THE WARPLAND》，追溯蒙福特、艾莉森·诺尔斯及格温多琳·布鲁克斯等来源。",
+      "result": "本节将内存溢出解释为兼具技术和政治含义的形式事件，并以谱系关系开启对《NEW SERMON》的分析；这是批评论证，不是对读者心理的实测。",
+      "example": "一首诗把“我不能呼吸”送入需要巨量内存的运算，程序停止可被读作计算边界；当作品又关联具体暴力事件时，读者可能把技术耗尽与创伤记忆并置理解。",
+      "limits": "记忆理论为作者提供阐释框架，但机器内存故障不等于人的创伤经验；程序理论上的失败也依赖硬件条件，不能视为永久不可能完成。",
+      "evidence": [
+        {
+          "id": "2-13",
+          "quote": "Bertram works with the same entanglement of technical process and expressive semiotics, but poetry is not a"
+        }
+      ],
+      "model": "学习库预生成 · gpt-6.1-sol"
+    },
+    "2-15": {
+      "why": "作者考察变量命名和列表结构，旨在指出代码虽能生成相似文本，程序员的命名选择仍可能体现不同阅读，并揭示伯特伦的改写重点。",
+      "explanation": "文章比较诺尔斯诗及蒙福特、惠伦的模拟：变量名虽不同，但不改变生成操作；作者认为命名可能标示各自的理解。伯特伦未公开《NEW SERMON》的最终代码，批评者据早期版本和输出模式推断其采用随机列表，并从五类变量名归纳出材料、地点、动词、手段与结果。",
+      "result": "本节把算法谱系从“文本像不像”推进到“程序如何组织语义”，并指出伯特伦将原作的描述性结构改造成包含行动与结果的政治表达。",
+      "example": "《A House of Dust》可从“木材、河流、电力、鸟类”组合居住场景；若新增“手段”和“结果”，则可组合出“采取某种行动以拒绝算法抹除”的政治命题。",
+      "limits": "部分判断依据早期代码、变量名和输出模式推测，伯特伦最终版本代码不可见；命名能提示读法，却不能单独证明作者意图。",
+      "evidence": [
+        {
+          "id": "2-15",
+          "quote": "from the inscriptions of that code."
+        }
+      ],
+      "model": "学习库预生成 · gpt-6.1-sol"
+    },
+    "2-16": {
+      "why": "本文属于对利莲—伊冯·伯特伦《Travesty Generator》的批判代码研究，借《NEW SERMON》与诺尔斯、坦尼的生成诗《A House of Dust》对读，说明算法形式如何承载种族化历史。",
+      "explanation": "文本证据显示，两诗的地点词表不同：《House of Dust》多为相对稳定的地理位置，《NEW SERMON》则写斗争、破窗、翻译与船舱等受压迫状态，并把中心对象从“房子”改为“民族”。作者进而细读代码：means和outcome各只有一个选项，随机函数仍执行选择，却没有实际选择自由；据此将形式与奴役意象并置。",
+      "result": "本节把生成诗的变量、随机选择机制和历史意象连起来，论证《NEW SERMON》并非仅改写《House of Dust》的诗行结构，而是把生成过程转为拒绝算法抹除的政治表达。",
+      "example": "若程序从唯一结果“拒绝算法抹除”中随机抽取，输出虽经随机函数产生，却不会变化。作者借此说明，形式上的选择过程可能掩盖实际无选择的处境；这与诗中奴役意象构成一种解释性呼应。",
+      "limits": "代码结构支持“单选项随机”的判断，但将其直接等同奴役是作者的历史阐释，不是程序本身证明的唯一意义；文本还提及未完整展示的代码版本。",
+      "evidence": [
+        {
+          "id": "2-16",
+          "quote": "version of the poem includes the same outcome in each cinquain, it is reasonable to infer that its source code is closer"
+        }
+      ],
+      "model": "学习库预生成 · gpt-6.1-sol"
+    },
+    "3-1": {
+      "why": "结论以《Travesty Generator》的时间生成诗收束全文，并借种族化的具体时刻反思计算时间与美国历史叙事，回应数字文学和批判代码研究对代码、文本及社会经验关系的关注。",
+      "explanation": "作者先引伯特伦关于种族经验由不完整时刻构成的自述，再解释Perl的localtime如何把系统时间转换为可处理字段。《@Code_Switching》用正则捕获时间数字选择词表项目，故输出随运行时刻变化；但作者逐项检查索引错误，指出$d[3]总选中“black”，而$d[$8]和$d[$6]总选中“switch”。文本证据是代码与输出，结论则是作者对时间、种族和“切换”的解读。",
+      "result": "本节展示时间变量既制造变化也限制变化：诗并非纯随机，代码缺陷反而固定部分词语。作者据此区别算法层面的时变输出与历史上种族压迫不会随时间自动消退的政治判断。",
+      "example": "若系统时间变化会改变词表中多数词的索引，诗行看似不断更新；但若某个索引始终指向“black”，该词仍固定出现。读者可据此区分代码造成的可变部分与不变部分。",
+      "limits": "代码分析支持有关索引行为的判断，但把固定词语解释为殖民机制中的种族身份经验，是作者的文学解读；结论依赖文中给出的代码版本及其运行环境。",
+      "evidence": [
+        {
+          "id": "3-1",
+          "quote": "$d[$1]   $d[$2]   $d[3]   $d[$4]   $d[$5]   $d[$8]\\n”;sleep   1;   while   $d   >"
+        }
+      ],
+      "model": "学习库预生成 · gpt-6.1-sol"
+    },
+    "3-3": {
+      "why": "结论借程序终止符把形式分析落到身体化经验，并交代批评者自身的位置；注释和文献则公开展示本文所依赖的研究脉络与引用来源。",
+      "explanation": "作者将诗末的“^C”解释为终端中断运行的快捷符号，进一步把杀死进程读作对持续切换的回应。这是从代码字符到表演性场景的修辞推断，而非程序运行记录。随后作者承认自己作为白人学者参与既有制度，并总结伯特伦如何借计算诗对抗压迫叙事。注释追溯《Taroko Gorge》改作谱系，参考文献列出批判代码研究、数字诗歌与相关历史资料。",
+      "result": "本节完成全文总结与位置反思；“^C”成为技术过程转向生活经验的文本节点。注释和书目不提供新的实测结果，而是标明作品谱系、理论来源及可供复核的出处。",
+      "example": "读者看到诗末连续出现“^C”，可先查明它在终端中代表中断信号，再判断把它想象成作者按下Ctrl+C属于文本提示支持的阅读，而不是已观察到的现场操作。",
+      "limits": "对按键场景的描述是想象性解读，不能证明真实创作过程；参考文献条目只能显示来源网络，不能替代对原始文献论证的核验。",
+      "evidence": [
+        {
+          "id": "3-3",
+          "quote": "Perhaps the only way to stop the switch is to kill the process, which Bertram portrays in a metaleptic gesture similar to"
+        }
+      ],
+      "model": "学习库预生成 · gpt-6.1-sol"
+    },
+    "3-5": {
+      "why": "最后一页继续列出研究涉及的理论、计算诗史和种族研究来源，并以授权声明说明文本的传播与再利用条件，方便追溯论证背景。",
+      "explanation": "书目涵盖程序诗先例、计算创造力、批判代码研究、算法与社会议题等来源，形成跨数字文学、软件研究和种族批评的参考网络。条目能帮助读者追查作者讨论的概念及作品出处，但它们并非正文中的逐项论证。末尾的Creative Commons Attribution-NoDerivatives 4.0声明涉及署名与禁止演绎等传播条件，不是作品分析结论。",
+      "result": "本页的实际功能是完成引文追溯并说明授权边界；它显示本文借助多学科研究脉络，但不提供新的代码测试、文本细读或经验发现。",
+      "example": "若要查证本文所说的程序诗传统，可从Hartman的《Virtual Muse》或rjs的《Energy Crisis Poems》书目线索继续阅读；授权声明则提醒读者转载时须遵守署名且不得制作演绎版本的条件。",
+      "limits": "书目列项不能单独证实正文的解释成立；授权文字只说明作品标示的许可条款，具体使用仍须核对适用法律与原始许可信息。",
+      "evidence": [
+        {
+          "id": "3-5",
+          "quote": "This work is licensed under a Creative Commons Attribution-NoDerivatives 4.0 International License."
+        }
+      ],
+      "model": "学习库预生成 · gpt-6.1-sol"
+    },
+    "2-17": {
+      "why": "作者把《NEW SERMON》与《House of Dust》并读，旨在说明生成诗并非中性的形式游戏，也能回应黑人历史中的奴役、抹除与文学排斥。",
+      "explanation": "作品处于数字文学与生成诗传统中，作者借后结构主义的“语言牢笼”讨论主体如何被语言建构，再以《NEW SERMON》的具体词表修正这一抽象框架。引文和诗句是文本证据；作者据“链条”“船舱”等意象，将囚禁解释为奴役与种族暴力的历史指涉。动词表及其反复邻接“ANY MEANS NECESSARY”，则被解读为召唤读者主动挖掘、反抗抹除。",
+      "result": "本段将形式分析推进为政治论证：算法生成既延续既有生成诗谱系，也可使压迫叙事具体显形，并为黑人主体想象新的叙述空间。",
+      "example": "若某生成诗反复把“挖掘”“召唤”等动词接到“拒绝抹除”之前，读者可先核对词表和排列规则，再讨论这种结构如何把算法输出塑造成行动号召。",
+      "limits": "这是对词语、历史意象与作者自述的阐释，不是读者效果或算法偏见的实测；其他读者也可能对意象的政治指涉作不同理解。",
+      "evidence": [
+        {
+          "id": "2-17",
+          "quote": "explicit and specific what is elsewhere algorithmically insidious and ambivalent."
+        }
+      ],
+      "model": "学习库预生成 · gpt-6.1-sol"
+    }
+  },
+  "review": {
+    "explanation": "作品是 Zach Whalen 对 Lillian-Yvonne Bertram《Travesty Generator》的数字文学评论，置于电子文学与批判代码研究传统中。文章追问：算法诗如何见证并抵抗针对黑人群体的暴力叙事？作者细读《Counternarratives》《three_last_words》与《NEW SERMON》，并比较 Montfort、Knowles 等作品，结合代码结构、输出形式和历史语境展开论证。《Counternarratives》的省略与句子演变，将泛化的暴力暗示转向 Trayvon Martin 案及种族化搜索叙事；《three_last_words》保留排列结果，作者报告运行中内存耗尽，并将崩溃解读为对 Eric Garner 窒息死亡的形式化纪念；《NEW SERMON》则以行动词、动荡地点和拒绝被算法抹除的结句，改写《A House of Dust》。这些是作者的文本解读，不是唯一读法或因果验证。",
+    "example": "1. 假设《Counternarratives》的明确历史线索比含混省略更能促成读者识别种族暴力；路线：制作保留原文语调的两种版本，随机分配读者并测量识别与情绪反应；对照为含混版本。2. 假设逐步累积的运行资源比一次性展示错误信息更能传达《three_last_words》的身体紧张感；路线：比较真实运行记录、录屏与静态错误页，测量紧张感和记忆；对照为静态错误页。3. 假设《NEW SERMON》的行动词与不稳定地点比《A House of Dust》的稳定词库更易引发抵抗主题解读；路线：盲测两组诗句并编码主题判断；对照为 Knowles 原诗。",
+    "limits": "作者承认其白人、男性及教职身份与诗中创伤经验存在距离；这限制其解释的代表性，但不取消细读价值。文章也指出《Counternarratives》源代码不可见，部分生成机制只能推测；作者称《NEW SERMON》代码未公开，因而依据文本模式推断其结构。读者还可注意：作者亲自运行《three_last_words》的崩溃经验是个案展示，不能据此证明不同设备均会崩溃，也不能验证政治隐喻对读者的普遍效果。文章主要提出阐释性论证，未系统比较读者反应或算法系统的现实影响。",
+    "evidence": [
+      {
+        "id": "2-4",
+        "quote": "digital poetry what critical code studies seeks for everyday systems and software when that software is bound up with"
+      },
+      {
+        "id": "2-12",
+        "quote": "Figure 2.   A screenshot displaying the error message of a Colab Notebook that crashed trying to execute"
+      }
+    ],
+    "model": "学习库预生成 · gpt-6.1-sol"
+  }
+}
