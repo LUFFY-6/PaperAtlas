@@ -16,6 +16,9 @@ for (const [ip, prefix] of [
 ] as const) reserved.addSubnet(ip, prefix, 'ipv4')
 const globalV6 = new BlockList()
 globalV6.addSubnet('2000::', 3, 'ipv6')
+const synthetic = new BlockList()
+synthetic.addSubnet('198.18.0.0', 15, 'ipv4')
+synthetic.addSubnet('2001:2::', 48, 'ipv6')
 for (const [ip, prefix] of [['2001::', 23], ['2001:db8::', 32], ['2002::', 16], ['3fff::', 20]] as const) {
   reserved.addSubnet(ip, prefix, 'ipv6')
 }
@@ -30,7 +33,7 @@ export function customModel(value: unknown, allowLocal: boolean, listing = false
   let url: URL
   try { url = new URL(input.base.trim()) } catch { throw new Error('请输入完整的接口地址。') }
   const local = allowLocal && ['localhost', '127.0.0.1'].includes(url.hostname)
-    && url.protocol === 'http:' && url.port === '11434' && /^\/v1(?:\/chat\/completions)?\/?$/.test(url.pathname)
+    && url.protocol === 'http:' && url.port === '11434' && /^\/v1(?:\/(?:chat\/completions|models))?\/?$/.test(url.pathname)
   if ((!local && url.protocol !== 'https:') || url.username || url.password || url.search || url.hash) {
     throw new Error('云端接口请使用 HTTPS。本机 Ollama 可使用 http://127.0.0.1:11434/v1。')
   }
@@ -85,6 +88,10 @@ export async function negotiatedCompletion(config: Pick<ModelConfig, 'base' | 'm
     })
     if (response.status >= 200 && response.status < 300) return messageText(response.body)
     const info = JSON.stringify(response.body ?? {})
+    if (response.status === 413 || (response.status === 400 || response.status === 422)
+      && /context_length_exceeded|maximum context length|context window|prompt.{0,25}too long|input.{0,25}too long|上下文.{0,12}(过长|超出|超限)/i.test(info)) {
+      throw new Error('当前模型容纳不下这次输入。引用论文时可切换到「相关段落」，或使用支持更长上下文的模型。')
+    }
     if (response.status === 400 && /Arrearage/i.test(info)) throw new Error('默认模型服务账户余额不足，请在设置中切换。')
     if (response.status === 400 && reasoning && /reasoning_effort/i.test(info)) {
       reasoning = false
@@ -109,21 +116,53 @@ export async function defaultChat(config: ModelConfig, messages: Message[], sign
   }, structured, maxTokens)
 }
 
+type Address = { address: string; family: number }
+
+function isPublicAddress({ address, family }: Address) {
+  return family === 4
+    ? !reserved.check(address, 'ipv4')
+    : globalV6.check(address, 'ipv6') && !reserved.check(address, 'ipv6')
+}
+
+async function resolvePublicDns(hostname: string, signal: AbortSignal): Promise<Address[]> {
+  const results = await Promise.allSettled(([4, 6] as const).map(async (family) => {
+    const url = new URL('https://dns.google/resolve')
+    url.searchParams.set('name', hostname)
+    url.searchParams.set('type', family === 4 ? 'A' : 'AAAA')
+    // Use the public resolver's known address while preserving HTTPS hostname verification.
+    // Otherwise the same local DNS issue can also break the fallback's own lookup.
+    const response = await requestJson(url, { address: '8.8.8.8', family: 4 }, false, '',
+      AbortSignal.any([signal, AbortSignal.timeout(4500)]))
+    if (response.status !== 200) return []
+    const { Answer } = (response.body ?? {}) as { Answer?: { type: number; data: string }[] }
+    return (Array.isArray(Answer) ? Answer : [])
+      .filter(({ type, data }) => type === (family === 4 ? 1 : 28) && typeof data === 'string' && isIP(data) === family)
+      .map(({ data }) => ({ address: data, family }))
+  }))
+  return results.flatMap((result) => result.status === 'fulfilled' ? result.value : [])
+}
+
 async function modelRequest(connection: ReturnType<typeof customModel>, signal: AbortSignal, payload?: Record<string, unknown>): Promise<WireResponse> {
   const { url, local, key } = connection
   const hostname = url.hostname.replace(/^\[|\]$/g, '')
   const family = isIP(hostname)
-  const addresses = family ? [{ address: hostname, family }]
+  let addresses = family ? [{ address: hostname, family }]
     : (await Promise.allSettled([resolve4(hostname), resolve6(hostname)]))
       .flatMap((result, index) => result.status === 'fulfilled'
         ? result.value.map((address) => ({ address, family: index === 0 ? 4 : 6 })) : [])
-  const address = addresses[0]
-  if (!address) throw new Error('无法解析接口地址，请检查拼写和网络。')
-  if (!local && addresses.some(({ address: ip, family }) => family === 4
-    ? reserved.check(ip, 'ipv4')
-    : !globalV6.check(ip, 'ipv6') || reserved.check(ip, 'ipv6'))) {
-    throw new Error('请选择公网 HTTPS 模型接口或本机 Ollama。')
+  // Node's DNS resolver may return no records even when the OS resolver returns a proxy address.
+  if (!local && !family && addresses.every(({ address, family }) => synthetic.check(address, family === 4 ? 'ipv4' : 'ipv6'))) {
+    const resolved = await resolvePublicDns(hostname, signal)
+    if (resolved.length && resolved.every(isPublicAddress)) addresses = resolved
   }
+  if (!addresses.length) throw new Error('无法解析接口地址，请检查拼写和网络。')
+  if (!local && addresses.some((address) => !isPublicAddress(address))) {
+    throw new Error('接口域名解析到了非公网地址。请检查本机代理的 DNS 设置，或向服务商确认可直连的 HTTPS 接口。')
+  }
+  return requestJson(url, addresses[0], local, key, signal, payload)
+}
+
+function requestJson(url: URL, address: Address, local: boolean, key: string, signal: AbortSignal, payload?: Record<string, unknown>): Promise<WireResponse> {
   const encoded = payload && JSON.stringify(payload)
   return new Promise((resolve, reject) => {
     const request = (local ? httpRequest : httpsRequest)(url, {
@@ -159,12 +198,19 @@ export function customChat(connection: ReturnType<typeof customModel>, messages:
 }
 
 export async function providerModels(connection: ReturnType<typeof customModel>, signal: AbortSignal) {
-  const { status, body } = await modelRequest(connection, signal)
+  let url = connection.url
+  let response = await modelRequest(connection, signal)
+  // Some providers require /v1 even when users enter only the hostname.
+  if (url.pathname === '/models' && (response.status === 404 || response.status === 405 || response.status === 200 && response.body === undefined)) {
+    url = new URL('/v1/models', url)
+    response = await modelRequest({ ...connection, url }, signal)
+  }
+  const { status, body } = response
   if (status === 401 || status === 403) throw new Error('密钥无效或没有读取模型的权限')
   const records = (body as { data?: unknown } | undefined)?.data
-  if (status < 200 || status >= 300 || !Array.isArray(records)) throw new Error('该服务商未提供模型列表，请手动填写模型名')
+  if (status < 200 || status >= 300 || !Array.isArray(records)) throw new Error('读取模型列表失败，请核对服务商的 API Base URL 和 /models 接口。')
   const models = [...new Set(records.flatMap((item) =>
     typeof item?.id === 'string' && item.id.trim() && item.id.length <= 160 ? [item.id.trim() as string] : []))].sort()
-  if (!models.length) throw new Error('该服务商未提供模型列表，请手动填写模型名')
-  return models.map((id) => ({ id }))
+  if (!models.length) throw new Error('接口没有返回可选模型，请确认该密钥的模型权限。')
+  return { models: models.map((id) => ({ id })), base: url.href.replace(/\/models$/, '') }
 }

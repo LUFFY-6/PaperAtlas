@@ -31,7 +31,7 @@ export function paragraphEvidence(blocks: Block[]) {
 }
 
 export function reviewBlocks(sections: ReadingSection[]): Block[] {
-  const source = sections.flatMap(({ blocks }) => blocks).filter(({ text }) => text.trim())
+  const source = sections.filter(({ kind }) => kind !== 'references').flatMap(({ blocks }) => blocks).filter(({ text }) => text.trim())
   const count = Math.min(source.length, 18)
   return Array.from({ length: count }, (_, index) => {
     const block = source[Math.round(index * (source.length - 1) / Math.max(1, count - 1))]
@@ -45,5 +45,17 @@ export function reviewEvidence(blocks: Block[]) {
     const candidates = lines.length ? [lines[0], lines[Math.floor(lines.length / 2)]] : [block.text.trim()]
     return [...new Set(candidates)].filter((quote) => quote.length >= 8)
       .map((quote) => ({ id: block.id, quote: quote.slice(0, 130) }))
+  })
+}
+
+export function sectionEvidenceCandidates(blocks: Block[]) {
+  return blocks.flatMap(({ id, text }) => {
+    const sentences = text.match(/[^。！？；\n.!?]+(?:[。！？；\n.!?]|$)/gu) ?? []
+    const passages = sentences.map((sentence) => sentence.trim()).filter((sentence) => sentence.length >= 18)
+    const source = passages.length ? passages : [text.trim()]
+    const count = Math.min(6, source.length)
+    return Array.from({ length: count }, (_, index) => source[Math.round(index * (source.length - 1) / Math.max(1, count - 1))].slice(0, 140).trim())
+      .filter((quote, index, all) => quote.length >= 8 && all.indexOf(quote) === index)
+      .map((quote) => ({ id, quote }))
   })
 }

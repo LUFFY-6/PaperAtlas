@@ -36,8 +36,12 @@
       "limits": "仅在正 Ricci 曲率或正曲率算子条件下成立，若无曲率约束，奇点行为可能复杂。",
       "evidence": [
         {
+          "id": "3-1",
+          "quote": "evolution equation   d\ndt   g ij   ( t ) =   − 2 R ij   for a riemannian metric   g ij   ( t )"
+        },
+        {
           "id": "3-2",
-          "quote": "in dimension four converge, modulo scaling, to metrics of constant positive"
+          "quote": "in dimension four converge, modulo scaling, to metrics of constant positive\ncurvature."
         }
       ],
       "model": "学习库预生成"
@@ -45,13 +49,13 @@
     "3-3": {
       "why": "作者强调Hamilton程序的实现将推导出三维闭流形的几何化猜想，突出其理论重要性。",
       "explanation": "文中指出，尽管无法证明所有时间解的归一化曲率有界，但能证明曲率无界区域是局部坍缩且下曲率有界的，结合前期未发表工作，这足以支持拓扑结论；同时提及对Kähler-Ricci流在正第一陈类情形下的Hamilton-Tian猜想有应用，但将在另篇论文中展开。",
-      "result": "虽未完全验证曲率有界性，但通过局部坍缩性质获得了拓扑结论，为Hamilton程序提供了关键进展。",
+      "result": "作者报告，无界曲率区域在曲率有下界的条件下局部坍缩，并说明需结合先前工作才能推出相应的拓扑结论。",
       "example": "例如，在一个三维闭流形上，若某区域曲率趋于无穷，该区域会表现出局部坍缩，且整体几何结构仍可被分类。",
       "limits": "结论依赖于前期未发表工作，且仅适用于闭流形，不直接推广到非闭或高维情形。",
       "evidence": [
         {
           "id": "3-3",
-          "quote": "occur among them. Thus, the implementation of Hamilton program would"
+          "quote": "is locally collapsed with curvature bounded below; by our earlier (partly\nunpublished) work this is enough for topological conclusions."
         }
       ],
       "model": "学习库预生成"
@@ -64,8 +68,8 @@
       "limits": "该类比基于物理直觉，非严格数学证明，其有效性受限于对量子场论背景的有限理解。",
       "evidence": [
         {
-          "id": "4-2",
-          "quote": "equation, in the spirit of Li-Yau and Hamilton. The technique of   § 9 and the"
+          "id": "4-1",
+          "quote": "this connection between the Ricci flow and the RG flow sug-\ngests that Ricci flow must be gradient-like; the present work confirms this\nexpectation."
         }
       ],
       "model": "学习库预生成"
@@ -78,8 +82,8 @@
       "limits": "该流在一般测度下可能无法短期存在，仅在特定条件下成立，且依赖于测度的正则性。",
       "evidence": [
         {
-          "id": "4-4",
-          "quote": "ever, we do have the Bianchi identity   ∇ ∗ m"
+          "id": "4-3",
+          "quote": "different choices of   m   lead to the same flow, up to a diffeomorphism; that is,\nthe choice of   m   is analogous to the choice of gauge."
         }
       ],
       "model": "学习库预生成"

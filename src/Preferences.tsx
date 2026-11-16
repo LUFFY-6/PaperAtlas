@@ -1,19 +1,9 @@
 import { useState, type FormEvent, type ReactNode, type RefObject } from 'react'
 import { X } from 'lucide-react'
-import { disciplineOptions, readingStyles, type Field, type ReadingStyle } from './papers'
+import { readingStyles, type ReadingStyle } from './papers'
 import { api, type User } from './Workspace'
 import type { Theme } from './theme'
 import { buildPersona, guestProfile, normalizeProfile, profileGoals } from './persona'
-
-export function DisciplineSelect({ field, value, onChange, disabled, className }: {
-  field: Field; value: string; onChange: (value: string) => void; disabled?: boolean; className?: string
-}) {
-  return <label className={className}>具体方向{field === 'custom'
-    ? <input aria-label="自定义学科" maxLength={60} value={value} disabled={disabled} onChange={(event) => onChange(event.target.value)} />
-    : <select aria-label="具体方向" value={value} disabled={disabled} onChange={(event) => onChange(event.target.value)}>
-      <option value="">未指定</option>{disciplineOptions(field).map(([id, name]) => <option key={id} value={id}>{name}</option>)}
-    </select>}</label>
-}
 
 export type SettingsTab = 'model' | 'profile'
 

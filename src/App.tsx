@@ -2,14 +2,16 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { ArrowUpRight, BookOpen, CloudUpload, ChevronRight, Columns3, Ellipsis, FileText, Folder, Layers3, Moon, Network, Plus, Search, Settings, Sun, X } from 'lucide-react'
 import { DeepReader } from './DeepReader'
 import { ModelSettings, type Connection } from './ModelSettings'
-import { disciplineLabel, fieldIcon, fields, normalizeField, type Field, type Paper, type Related, type Project } from './papers'
-import { history, loadReading, recallConnection, recallStyle, rememberConnection, rememberPaper, rememberStyle, removeHistory, renameHistory } from './storage'
+import { customFieldPrefix, disciplineLabel, fieldIcon, fields, normalizeField, validDiscipline, type Field, type Paper, type Related, type Project } from './papers'
+import { history, recallApis, recallConnection, recallStyle, rememberApis, rememberConnection, rememberPaper, rememberStyle, removeHistory, renameHistory, sameApi } from './storage'
 import { LiteratureMap, MethodTable } from './Literature'
 import { PdfOriginal, TextOriginal, WordOriginal } from './Original'
 import { api, ChatHome, WorkspaceDialogs, type User } from './Workspace'
 import { fileDrop } from './drop'
-import { StudyLibrary } from './StudyLibrary'
-import { DisciplineSelect, Preferences, type SettingsTab } from './Preferences'
+import { loadStudyPaper, StudyLibrary } from './StudyLibrary'
+import { catalog } from './catalog'
+import { Preferences, type SettingsTab } from './Preferences'
+import { DisciplineSelect } from './DisciplineSelect'
 import { readerSections, readingSections } from './sections'
 import { applyTheme, readTheme, type Theme } from './theme'
 import { modelFetch, modelStatus } from './modelStatus'
@@ -19,6 +21,21 @@ import { References } from './References'
 import { Intro, shouldPlayIntro } from './Intro'
 
 const tabs = [['read', '全文精读', BookOpen], ['compare', '方法对比', Columns3], ['graph', '论文关系', Network], ['source', '文段', FileText]] as const
+const presetProject: Project = { id: 'preset-library', title: '预设库', field: 'custom' }
+const presetPaperIds = new Set(catalog.map(({ id }) => id))
+
+function assignPresetProject(paper: Paper): Paper {
+  return presetPaperIds.has(paper.id) && paper.projectId !== presetProject.id
+    ? { ...paper, projectId: presetProject.id }
+    : paper
+}
+
+const pdfTextMessages = {
+  'no-text': '没有提取到可用正文，可以翻页查看原件。需要精读或问答时，请导入经过 OCR 的版本。',
+  password: '文件有密码保护。可以打开原件输入密码，或导入解锁后的版本进行精读。',
+  unreadable: '无法解析这份 PDF。可以下载已保存的文件，或重新导入完整的原版。',
+  large: '文件超过 24 MB，已保留原件。可打开原件阅读，或导入压缩版进行精读。',
+} as const
 type Tab = typeof tabs[number][0]
 type Explanation = { explanation: string; example: string; limits: string; evidence: { id: string; quote: string }[]; model: string }
 
@@ -31,16 +48,13 @@ async function json<T>(url: string, options?: RequestInit): Promise<T> {
 
 export function App() {
   const [user, setUser] = useState<User | null>(null)
-  const [sessionReady, setSessionReady] = useState(false)
   const [showIntro, setShowIntro] = useState(shouldPlayIntro)
   const finishIntro = useCallback(() => setShowIntro(false), [])
   useEffect(() => {
-    void api<{ user: User | null }>('/api/session').then(({ user }) => setUser(user)).catch(() => {}).finally(() => setSessionReady(true))
+    void api<{ user: User | null }>('/api/session').then(({ user }) => setUser(user)).catch(() => {})
   }, [])
-  return <>
-    {showIntro && <Intro owner={sessionReady ? user?.id ?? '' : undefined} onFinish={finishIntro} />}
-    <WorkspaceApp key={user?.id || 'guest'} user={user} onUser={setUser} />
-  </>
+  if (showIntro) return <Intro onFinish={finishIntro} />
+  return <WorkspaceApp key={user?.id || 'guest'} user={user} onUser={setUser} />
 }
 
 function WorkspaceApp({ user, onUser }: { user: User | null; onUser: (user: User | null) => void }) {
@@ -58,16 +72,36 @@ function WorkspaceApp({ user, onUser }: { user: User | null; onUser: (user: User
   }
   const dark = theme === 'dark' || theme === 'system' && systemDark
   const owner = user?.id ?? ''
+  const customFieldsKey = 'paper-atlas-fields-' + owner
+  const [customFields, setCustomFields] = useState<string[]>(() => {
+    try {
+      const saved: unknown = JSON.parse(localStorage.getItem(customFieldsKey) ?? '[]')
+      return Array.isArray(saved) ? saved.filter((name): name is string => typeof name === 'string') : []
+    } catch { return [] }
+  })
+  const libraryFields = [
+    ...Object.entries(fields),
+    ...customFields.map((name) => [customFieldPrefix + name, name]),
+  ]
+  function addLibraryField(rawName: string) {
+    const name = rawName.trim()
+    if (!name || name.length > 60) throw new Error('请输入 1 到 60 个字符的领域名称。')
+    if (libraryFields.some(([, label]) => label.toLowerCase() === name.toLowerCase())) throw new Error('这个领域名称已存在。')
+    const next = [...customFields, name]
+    try { localStorage.setItem(customFieldsKey, JSON.stringify(next)) }
+    catch { throw new Error('浏览器未能保存新领域，请检查本地存储后重试。') }
+    setCustomFields(next)
+  }
   const [conversation, setConversation] = useState(() => createConversation(owner))
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [showChat, setShowChat] = useState(true)
-  const [recentProgress, setRecentProgress] = useState('')
   const conversationDialog = useRef<HTMLDialogElement>(null)
   const [conversationAction, setConversationAction] = useState<{ item: Conversation; action: 'rename' | 'delete' }>()
   const [view, setView] = useState<'workspace' | 'library'>('workspace')
   const [libraryTab, setLibraryTab] = useState<'mine' | 'preset'>('preset')
-  const [projects, setProjects] = useState<Project[]>([])
+  const [projects, setProjects] = useState<Project[]>([presetProject])
   const [project, setProject] = useState<Project>()
+  const importProject = view === 'library' ? undefined : project
   const account = useRef<HTMLDialogElement>(null)
   const preferences = useRef<HTMLDialogElement>(null)
   const [settingsTab, setSettingsTab] = useState<SettingsTab>('profile')
@@ -94,10 +128,12 @@ function WorkspaceApp({ user, onUser }: { user: User | null; onUser: (user: User
   const [library, setLibrary] = useState<Paper[]>([])
   const recent = project ? library.find((item) => item.projectId === project.id) : library[0]
   const [paper, setPaper] = useState<Paper>()
+  const [exampleSection, setExampleSection] = useState<string>()
   const [tab, setTab] = useState<Tab>('read')
   const [source, setSource] = useState('')
   const [fallback, setFallback] = useState('')
   const [connection, setConnection] = useState<Connection | null>(() => recallConnection(owner))
+  const [savedApis, setSavedApis] = useState(() => recallApis(owner))
   const [defaultEffort, setDefaultEffort] = useState(readEffort)
   const [remembered, setRemembered] = useState(() => !!connection)
   const [storageMessage, setStorageMessage] = useState('')
@@ -122,7 +158,7 @@ function WorkspaceApp({ user, onUser }: { user: User | null; onUser: (user: User
   const [saveComparison, setSaveComparison] = useState(false)
   const comparisonInput = useRef<HTMLInputElement>(null)
   const comparisonVersion = useRef(0)
-  const [discovery, setDiscovery] = useState<{ query: string; position: string; works: Related[]; year?: string }>()
+  const [discovery, setDiscovery] = useState<{ query: string; position: string; works: Related[]; year?: string; source: 'crossref' | 'library' | 'mixed' }>()
   const [busy, setBusy] = useState('')
   const [error, setError] = useState('')
   const modal = useRef<HTMLDialogElement>(null)
@@ -130,8 +166,12 @@ function WorkspaceApp({ user, onUser }: { user: User | null; onUser: (user: User
   const [file, setFile] = useState<File>()
   const [importName, setImportName] = useState('')
   const [importText, setImportText] = useState('')
-  const [importField, setImportField] = useState<Field | ''>('')
+  const [importFieldChoice, setImportFieldChoice] = useState('')
+  const importCustomField = importFieldChoice.startsWith(customFieldPrefix) ? importFieldChoice.slice(customFieldPrefix.length) : undefined
+  const importField = importCustomField ? 'custom' : importFieldChoice as Field | ''
   const [importDiscipline, setImportDiscipline] = useState('')
+  const validImportDiscipline = !!importField && !!importDiscipline.trim() && validDiscipline(importField, importDiscipline)
+  const [existingPaperId, setExistingPaperId] = useState('')
   const [importBusy, setImportBusy] = useState(false)
   const [importError, setImportError] = useState('')
   const request = useRef<AbortController | null>(null)
@@ -142,21 +182,14 @@ function WorkspaceApp({ user, onUser }: { user: User | null; onUser: (user: User
     }).catch(() => { if (active) setStorageMessage('暂时无法读取已保存的对话。') })
     return () => { active = false }
   }, [owner])
-  useEffect(() => {
-    setRecentProgress('')
-    if (!recent) return
-    let active = true
-    const sections = readerSections(recent.blocks).filter((part) => !part.kind)
-    void loadReading<{ completed?: number; lessons?: Record<string, unknown> }>(recent.id, owner).then((state) => {
-      const done = state?.completed ?? sections.filter((part) => part.batches.every(([block]) => state?.lessons?.[block.id])).length
-      if (active) setRecentProgress(`已读 ${done}/${sections.length} 节`)
-    }).catch(() => {})
-    return () => { active = false }
-  }, [owner, recent, showChat])
 
   useEffect(() => { json<{ live: boolean; model: string }>('/api/config').then((info) => setFallback(info.live ? info.model : '')).catch(() => {}) }, [])
   useEffect(() => {
-    void history(owner).then((saved) => setLibrary((current) => [...current, ...saved.filter(({ id }) => !current.some((item) => item.id === id)).map((item) => ({ ...item, field: normalizeField(item.field) }))]))
+    void history(owner).then((saved) => setLibrary((current) => [
+      ...current,
+      ...saved.filter(({ id }) => !current.some((item) => item.id === id))
+        .map((item) => assignPresetProject({ ...item, field: normalizeField(item.field) })),
+    ]))
       .catch(() => setStorageMessage('暂时无法读取浏览器中的阅读历史。'))
       .finally(() => setHistoryReady(true))
   }, [owner])
@@ -172,10 +205,34 @@ function WorkspaceApp({ user, onUser }: { user: User | null; onUser: (user: User
     setBusy('')
     setError('')
     setConnection(next)
+    setRemembered(!!next && remember)
     try {
+      const apis = next && remember ? [next, ...savedApis.filter((item) => !sameApi(item, next))] : savedApis
+      if (apis.length) rememberApis(owner, apis)
       rememberConnection(remember ? next : null, owner)
-      setRemembered(!!next && remember)
+      setSavedApis(apis)
     } catch { setStorageMessage('模型设置已应用，但浏览器未能记住连接。') }
+  }
+
+  function removeApi(api: Connection) {
+    const apis = savedApis.filter((item) => !sameApi(item, api))
+    if (sameApi(connection, api)) {
+      rememberConnection(null, owner)
+      setRemembered(false)
+    }
+    rememberApis(owner, apis)
+    setSavedApis(apis)
+  }
+
+  function renameApi(api: Connection, name: string) {
+    const apis = savedApis.map((item) => sameApi(item, api) ? { ...item, name } : item)
+    rememberApis(owner, apis)
+    setSavedApis(apis)
+    if (connection && sameApi(connection, api)) {
+      const renamed = { ...connection, name }
+      setConnection(renamed)
+      if (remembered) rememberConnection(renamed, owner)
+    }
   }
 
   function changeEffort(next: Effort) {
@@ -184,16 +241,22 @@ function WorkspaceApp({ user, onUser }: { user: User | null; onUser: (user: User
     try { localStorage.setItem('paper-atlas-default-effort', next) } catch {}
   }
 
-  function choose(next: Paper) {
+  function choose(selected: Paper, alreadySaved = false, initialSection?: string) {
+    const next = assignPresetProject(selected)
+    setExampleSection(initialSection)
     setView('workspace')
     setShowChat(false)
-    if (paper?.id === next.id && paper.discipline === next.discipline && paper.field === next.field) return
     setProject((current) => current?.id === next.projectId ? current : projects.find((item) => item.id === next.projectId))
+    if (conversation.projectId !== next.projectId) setConversation(createConversation(owner, next.projectId))
+    if (paper?.id === next.id && paper.discipline === next.discipline && paper.field === next.field && paper.projectId === next.projectId) {
+      if (initialSection) setTab('read')
+      return
+    }
     request.current?.abort()
     setPaper(next.original ? { ...next, pdfUrl: URL.createObjectURL(next.original) } : next)
     setLibrary((current) => [{ ...next, lastOpened: Date.now() }, ...current.filter(({ id }) => id !== next.id)])
-    void rememberPaper(next, owner).catch(() => setStorageMessage('浏览器未能保存这篇论文，当前仍可阅读。'))
-    setSource(next.blocks[0].id)
+    if (!alreadySaved) void rememberPaper(next, owner).catch(() => setStorageMessage('浏览器未能保存这篇论文，当前仍可阅读。'))
+    setSource(next.blocks[0]?.id ?? '1')
     setTab('read')
     setDiscovery(undefined)
     setComparison(null)
@@ -293,23 +356,54 @@ function WorkspaceApp({ user, onUser }: { user: User | null; onUser: (user: User
     setImportError('')
     setImportName('')
     setImportText('')
-    setImportField(project?.field ?? '')
-    setImportDiscipline(project?.discipline ?? '')
-    setFile(selected)
+    setExistingPaperId('')
+    setImportFieldChoice(importProject?.field ?? '')
+    setImportDiscipline(importProject?.discipline ?? '')
+    setFile(undefined)
     modal.current?.querySelector('form')?.reset()
-    modal.current?.showModal()
+    if (selected) void selectImportFile(selected)
+    else modal.current?.showModal()
+  }
+
+  async function selectImportFile(selected: File) {
+    if (importBusy) return
+    setImportBusy(true)
+    setImportError('')
+    try {
+      const { findOriginal } = await import('./import')
+      const saved = historyReady ? library : await history(owner).catch(() => library)
+      const sameScope = importProject ? saved.filter((item) => item.projectId === importProject.id) : saved
+      const existing = await findOriginal(selected, sameScope)
+      if (existing) {
+        modal.current?.close()
+        choose(existing)
+        return
+      }
+    } catch { /* Continue to import if the browser could not compare the files. */ }
+    finally { setImportBusy(false) }
+    setFile(selected)
+    if (!modal.current?.open) modal.current?.showModal()
   }
 
   async function addPaper(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (importBusy || !importField) return
+    if (importBusy) return
     setImportError('')
     setImportBusy(true)
     try {
-      const { importPaper, makePaper, textBlocks } = await import('./import')
-      if (!file && !importText.trim()) throw new Error('请选择文件或粘贴一段正文。')
-      const next = file ? await importPaper(file, importField) : makePaper(importName, textBlocks(importText), importField, '粘贴文本')
-      choose({ ...next, projectId: project?.id, discipline: importDiscipline.trim() })
+      if (existingPaperId && importProject) {
+        const existing = library.find((item) => item.id === existingPaperId && (!item.projectId || item.projectId === importProject.id))
+        if (!existing) throw new Error('这篇论文已不在可添加列表中。')
+        choose({ ...existing, projectId: importProject.id })
+      } else {
+        if (!importField || !validImportDiscipline || (!file && !importText.trim())) throw new Error('请选择文件或粘贴正文，并填写学科领域和具体专业。')
+        const { importPaper, makePaper, textBlocks } = await import('./import')
+        const next = file ? await importPaper(file, importField) : makePaper(importName, textBlocks(importText), importField, '粘贴文本')
+        const imported = { ...next, projectId: importProject?.id, discipline: importDiscipline.trim(), customField: importCustomField }
+        await rememberPaper(imported, owner).catch(() => { throw new Error('浏览器未能保存原件，请检查本地存储空间后重试。') })
+        if (view === 'library') setLibraryTab('mine')
+        choose(imported, true)
+      }
       modal.current?.close()
     } catch (reason) {
       setImportError(reason instanceof Error ? reason.message : '导入失败，请换一种格式。')
@@ -351,6 +445,7 @@ function WorkspaceApp({ user, onUser }: { user: User | null; onUser: (user: User
     try {
       const { importPaper, makePaper, textBlocks } = await import('./import')
       const result = file ? await importPaper(file, paper.field) : makePaper('粘贴的对照论文', textBlocks(comparisonText), paper.field, '粘贴文本')
+      if (!result.blocks.length) throw new Error('这份 PDF 没有可用于对比的正文。请粘贴正文或选择有文字层的 PDF。')
       if (version === comparisonVersion.current) {
         selectComparison(result)
         setComparisonText('')
@@ -365,9 +460,14 @@ function WorkspaceApp({ user, onUser }: { user: User | null; onUser: (user: User
     if (!paper || !current) return
     const target = comparisonPaper ?? library.find((item) => item.id === comparisonId && item.id !== paper.id)
     if (!target) return
-    const a = readerSections(paper.blocks).find(({ id }) => id === currentSection)
-    const targetSections = readingSections(target.blocks)
-    const b = comparisonSection ? targetSections.find(({ id }) => id === comparisonSection) : targetSections.find(({ title }) => /^(abstract|摘要)/i.test(title))
+    const sourceSections = readerSections(paper.blocks).filter(({ kind }) => !kind)
+    const a = sourceSections.find(({ id }) => id === currentSection)
+      ?? sourceSections.find(({ title }) => /^(abstract|摘要)/i.test(title)) ?? sourceSections[0]
+    const targetSections = readerSections(target.blocks).filter(({ kind }) => !kind)
+    const b = targetSections.find(({ id }) => id === comparisonSection)
+      ?? targetSections.find(({ title }) => /^(abstract|摘要)/i.test(title))
+    setComparison(null)
+    setComparisonError('')
     if (comparisonPaper && saveComparison && !library.some(({ id }) => id === target.id)) {
       try {
         await rememberPaper(target, owner)
@@ -376,14 +476,14 @@ function WorkspaceApp({ user, onUser }: { user: User | null; onUser: (user: User
     }
     const blocks = [
       { id: 'a', title: `论文 A · ${a?.title || current.title}`.slice(0, 100), text: (a?.blocks.map(({ text }) => text).join('\n') || current.text).slice(0, 5000) },
-      ...(b?.blocks ?? target.blocks).slice(0, b ? 5 : 3).map((block, i) => ({
+      ...(b?.blocks ?? targetSections.flatMap(({ blocks }) => blocks)).slice(0, b ? 5 : 3).map((block, i) => ({
         ...block, id: `b${i}`, title: `论文 B · ${block.title}`.slice(0, 100), text: block.text.slice(0, 5000),
       })),
     ]
     void run('正在对照两篇论文的所选文段…', (signal) => json<Explanation>('/api/explain', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, signal,
       body: JSON.stringify({ title: '两篇论文的文段对比', field: paper.field, style, blocks, compare: true, connection,
-        question: `A：《${paper.title}》；B：《${target.title}》。用「讲解」对照研究问题、方法与证据，用「例子」说明一个具体差异。每篇至少引用一处支持对比的原文，缺少信息就在证据范围说明。`.slice(0, 500) }),
+        question: `A：《${paper.title.slice(0, 230)}》；B：《${target.title.slice(0, 230)}》。` }),
     }), setComparison)
   }
 
@@ -410,20 +510,19 @@ function WorkspaceApp({ user, onUser }: { user: User | null; onUser: (user: User
 
   const current = paper?.blocks.find((block) => block.id === source) ?? paper?.blocks[0]
   const list = project ? library.filter((item) => item.projectId === project.id) : library
+  const selectablePapers = importProject ? library.filter((item) => !item.projectId || item.projectId === importProject.id) : []
+  const opensExistingPaper = selectablePapers.some((item) => item.id === existingPaperId && item.projectId === importProject?.id)
   const visibleConversations = project ? conversations.filter((item) => item.projectId === project.id) : conversations
-  const sameField = library.filter((item) => item.field === paper?.field && item.id !== paper?.id)
+  const sameField = library.filter((item) => item.field === paper?.field && item.id !== paper?.id && item.blocks.length)
   const comparisonTarget = comparisonPaper ?? sameField.find((item) => item.id === comparisonId)
 
   return <>
     <header className="workspace-top">
-      <button className="workspace-brand" onClick={() => { resetPaper(); setView('workspace'); setProject(undefined) }}><Layers3 size={20} /> Paper Atlas</button>
+      <button className="workspace-brand" onClick={() => { resetPaper(); selectProject(undefined) }}><Layers3 size={20} /> Paper Atlas</button>
       <nav aria-label="工作区">
         <button aria-current={view === 'workspace' ? 'page' : undefined} onClick={() => setView('workspace')}>科研工作台</button>
         <button aria-current={view === 'library' ? 'page' : undefined} onClick={() => setView('library')}>学习库</button>
       </nav>
-      <button className="model-trigger" aria-label="模型连接状态" title={status.lastError || (status.lastOkAt ? '最近一次请求成功' : '尚未验证连接')} onClick={() => openSettings()}>
-        <i className="status-dot" data-state={status.lastError ? 'error' : status.lastOkAt && activeModel ? 'ok' : 'idle'} /><span>{activeModel || '未配置模型'}</span>
-      </button>
       <button className="theme-toggle" aria-label={dark ? '切换浅色主题' : '切换深色主题'} onClick={() => changeTheme(dark ? 'light' : 'dark')}>{dark ? <Sun size={16} /> : <Moon size={16} />}</button>
       <button className="account-trigger" onClick={() => account.current?.showModal()}>{user?.displayName || user?.name || '登录 / 注册'}</button>
     </header>
@@ -437,8 +536,15 @@ function WorkspaceApp({ user, onUser }: { user: User | null; onUser: (user: User
         <button className="sidebar-new" onClick={newConversation}><Plus size={17} /> 新对话</button>
         <div className="sidebar-heading"><span>项目</span><button aria-label="新建项目" onClick={() => (user ? projectDialog : account).current?.showModal()}><Plus size={15} /></button></div>
         {project && <button className="sidebar-row" onClick={() => selectProject(undefined)}><Folder size={15} /> 全部论文</button>}
-        {projects.map((item) => { const Icon = fieldIcon[item.field]; return <button className="sidebar-row" aria-current={item.id === project?.id ? 'true' : undefined} onClick={() => selectProject(item)} key={item.id}><Icon size={15} role="img" aria-label={fields[item.field] + '项目'} /><span>{item.title}</span><small>{disciplineLabel(item.field, item.discipline)}</small></button> })}
-        <div className="sidebar-heading"><span>对话</span></div>
+        {projects.map((item) => {
+          const preset = item.id === presetProject.id
+          const Icon = preset ? BookOpen : fieldIcon[item.field]
+          return <button className="sidebar-row" aria-current={item.id === project?.id ? 'true' : undefined} onClick={() => selectProject(item)} key={item.id}>
+            <Icon size={15} aria-hidden="true" /><span>{item.title}</span>
+            {!preset && <small>{disciplineLabel(item.field, item.discipline)}</small>}
+          </button>
+        })}
+        <div className="sidebar-heading"><span>{project ? '项目对话' : '对话'}</span></div>
         {visibleConversations.length ? <div className="sidebar-list conversation-list">{visibleConversations.map((item) => <div className="history-row" key={item.id}>
           <button className="sidebar-row" title={item.title} aria-current={showChat && view === 'workspace' && conversation.id === item.id ? 'true' : undefined} onClick={() => openConversation(item)}><span>{item.title}</span></button>
           <details className="history-menu"><summary aria-label={'管理对话 ' + item.title}><Ellipsis size={16} /></summary><div>
@@ -448,9 +554,9 @@ function WorkspaceApp({ user, onUser }: { user: User | null; onUser: (user: User
             }}>{action === 'rename' ? '重命名' : '删除'}</button>)}
           </div></details>
         </div>)}</div> : <p className="sidebar-empty">暂无对话</p>}
-        <div className="sidebar-heading"><span>论文库</span><button aria-label="粘贴或导入论文" onClick={() => openImport()}><Plus size={15} /></button></div>
-        <button className="sidebar-drop" disabled={importBusy} onClick={() => dropInput.current?.click()}><CloudUpload size={19} /> {importBusy ? '正在读取论文…' : '拖入或点击上传'}</button>
-        <div className="sidebar-heading"><span>阅读历史</span></div>
+        <div className="sidebar-heading"><span>{project ? '项目论文' : '论文库'}</span><button aria-label={project ? '添加项目论文' : '粘贴或导入论文'} onClick={() => openImport()}><Plus size={15} /></button></div>
+        <button className="sidebar-drop" disabled={importBusy} onClick={() => project ? openImport() : dropInput.current?.click()}><CloudUpload size={19} /> {importBusy ? '正在读取论文…' : project ? '添加或拖入项目论文' : '拖入或点击上传'}</button>
+        {!project && <div className="sidebar-heading"><span>阅读历史</span></div>}
         {list.length ? <div className="sidebar-list">{list.map((item) => { const Icon = fieldIcon[item.field]; return <div className="history-row" key={item.id}>
           <button className="sidebar-row" aria-label={item.historyTitle || item.title} title={item.historyTitle || item.title} aria-current={paper?.id === item.id && view === 'workspace' ? 'true' : undefined} onClick={() => choose(item)}><Icon size={15} role="img" aria-label={fields[item.field] + '论文'} /><span>{item.historyTitle || item.short}</span></button>
           <details className="history-menu"><summary aria-label={`管理 ${item.historyTitle || item.short}`}><Ellipsis size={16} /></summary><div>
@@ -460,20 +566,44 @@ function WorkspaceApp({ user, onUser }: { user: User | null; onUser: (user: User
             }}>{action === 'rename' ? '重命名' : '删除'}</button>)}
           </div></details>
         </div> })}</div>
-          : <p className="sidebar-empty">{historyReady ? '暂无阅读记录' : '正在读取历史…'}</p>}
-        <footer className="sidebar-settings"><button onClick={() => openSettings('profile')}><Settings size={16} /> 设置</button></footer>
+          : <p className="sidebar-empty">{historyReady ? project ? '暂无项目论文' : '暂无阅读记录' : '正在读取历史…'}</p>}
+        <footer className="sidebar-settings"><button onClick={() => openSettings()}><Settings size={16} /> 设置</button></footer>
       </aside>
       <div className="workspace-content">
       {storageMessage && <p className="storage-message warning" role="status">{storageMessage}</p>}
-      {importError && <p className="storage-message warning" role="alert">{importError}</p>}
       {modelIssue && view === 'workspace' && <p className="storage-message warning" role="status">{modelIssue}</p>}
-      {view === 'library' ? <StudyLibrary openPaper={choose} saved={library} owner={owner} tab={libraryTab} onTab={setLibraryTab} onUpload={() => dropInput.current?.click()}
-          onRemove={(item) => { setHistoryAction({ item, action: 'delete' }); historyDialog.current?.showModal() }} /> : showChat || !paper || !current ?
+      {view === 'library' ? <StudyLibrary openPaper={choose} saved={library} owner={owner} tab={libraryTab} onTab={setLibraryTab} onUpload={() => openImport()}
+          libraryFields={libraryFields} onAddField={addLibraryField}
+          onRemove={(item) => { setHistoryAction({ item, action: 'delete' }); historyDialog.current?.showModal() }} /> :
+      !showChat && paper?.pdfTextStatus && paper.original ? <div className="shell reader-shell reader-deep"><main>
+        <div className="paper-header">
+          <div className="paper-meta"><span className="field-tag">{disciplineLabel(paper.field, paper.discipline)}</span><span>PDF · 原件已保存</span></div>
+          <h1>{paper.title}</h1>
+          <p className="warning" role="status">{pdfTextMessages[paper.pdfTextStatus]}</p>
+          <div className="original-tools">
+            {paper.pdfTextStatus !== 'unreadable' && <a className="secondary" href={paper.pdfUrl} target="_blank" rel="noreferrer">打开原件</a>}
+            <a className="secondary" href={paper.pdfUrl} download={paper.original instanceof File ? paper.original.name : `${paper.title}.pdf`}>下载原件</a>
+          </div>
+        </div>
+        {paper.pdfTextStatus === 'no-text' && <>
+          {Boolean(paper.pdfPages && paper.pdfPages > 1) && <label className="original-tools">PDF 页码 <select value={source} onChange={(event) => setSource(event.target.value)}>
+            {Array.from({ length: paper.pdfPages ?? 1 }, (_, index) => <option key={index + 1}>{index + 1}</option>)}
+          </select></label>}
+          <PdfOriginal key={paper.id} original={paper.original} page={Number(source) || 1} />
+        </>}
+      </main></div> : showChat || !paper || !current ?
         <ChatHome key={conversation.id} conversation={conversation} onChange={updateConversation} user={user} field={project?.field || 'custom'} discipline={project?.discipline} project={project} style={style}
           effort={connection ? normalizeEffort(connection.effort) : defaultEffort} onEffort={changeEffort} onModel={(model) => { if (connection) changeModel({ ...connection, model }, remembered) }}
-          connection={connection} model={activeModel} openSettings={openSettings}
-          openImport={() => dropInput.current?.click()} openLibrary={(tab) => { setLibraryTab(tab); setView('library') }} upload={openImport} importBusy={importBusy}
-          recent={recent} recentProgress={recentProgress} openRecent={() => { if (recent) { choose(recent); setTab('read') } }} newConversation={newConversation} /> : <div className={`shell reader-shell ${tab === 'read' ? 'reader-deep' : ''}`}>
+          connection={connection} model={activeModel} status={status} openSettings={openSettings}
+          projectPapers={list} openPaper={choose}
+          openImport={() => project ? openImport() : dropInput.current?.click()} openLibrary={() => { setLibraryTab('mine'); setView('library') }}
+          onExample={async (signal) => {
+            const item = catalog.find(({ id }) => id === 'arxiv-1706.03762')
+            if (!item) throw new Error('试读示例暂不可用。')
+            const sample = await loadStudyPaper(item, library, signal)
+            if (!signal.aborted) choose(sample, false, 'Scaled Dot-Product Attention')
+          }} upload={openImport} importBusy={importBusy}
+          recent={recent} openRecent={() => { if (recent) { choose(recent); setTab('read') } }} newConversation={newConversation} /> : <div className={`shell reader-shell ${tab === 'read' ? 'reader-deep' : ''}`}>
       <main>
         <div className="paper-header"><div className="paper-meta"><span className={`field-tag ${paper.field}`}>{disciplineLabel(paper.field, paper.discipline)}</span><span>{paper.format || `${paper.venue} · ${paper.year}`}</span></div>
           <h1>{paper.title}</h1>
@@ -482,15 +612,15 @@ function WorkspaceApp({ user, onUser }: { user: User | null; onUser: (user: User
         </div>
         <nav className="tabs" aria-label="论文阅读视图">{tabs.map(([id, label, Icon]) => <button type="button" key={id} aria-pressed={tab === id} onClick={() => { setTab(id); setError('') }}><Icon size={16} />{label}</button>)}</nav>
         <div className="feedback" aria-live="polite">{busy && <div className="notice" role="status">{busy}<button onClick={() => { request.current?.abort(); setBusy('') }}>取消</button></div>}{error && <div className="warning" role="alert">{error}</div>}</div>
-        <div hidden={tab !== 'read'}><DeepReader key={paper.id} paper={paper} owner={owner} style={style} model={activeModel} connection={connection}
+        <div hidden={tab !== 'read'}><DeepReader key={paper.id + (exampleSection ?? '')} paper={paper} owner={owner} style={style} model={activeModel} connection={connection} initialSection={exampleSection}
           openSettings={openSettings} onSection={setCurrentSection} visible={tab === 'read'} profile={user ?? undefined} /></div>
         {(tab === 'compare' || tab === 'graph') && <section className="tab-content discovery">
           <div className="source-heading"><h2>{tab === 'compare' ? '查找同类研究' : '论文在领域中的位置'}</h2>
             {activeModel ? <button className="primary" disabled={!!busy} onClick={findRelated}><Search size={15} />{discovery ? '重新检索' : '检索并分析'}</button>
               : <button className="primary" onClick={() => openSettings()}>连接模型</button>}
           </div>
-          <p className="subtle">将题名和部分原文发送给当前模型，生成检索词后在 Crossref 查找论文。</p>
-          {discovery && <p className="subtle" role="status">检索词 · {discovery.query}</p>}
+          <p className="subtle">根据题名和部分原文生成检索词，优先检索 Crossref，必要时查找学习库。</p>
+          {discovery && <p className="subtle" role="status">{discovery.works.length} 篇 · 来源 · {discovery.source === 'mixed' ? 'Crossref 与本地收录资料' : discovery.source === 'library' ? '本地收录资料' : 'Crossref'} · 检索词 · {discovery.query}</p>}
           {discovery && !discovery.works.length && <div className="empty">这次没有找到可确认的相近工作，可重新检索或导入对照论文。</div>}
           {tab === 'compare' && !!discovery?.works.length && <MethodTable works={discovery.works} />}
           {tab === 'graph' && !!discovery?.works.length && <>
@@ -515,7 +645,7 @@ function WorkspaceApp({ user, onUser }: { user: User | null; onUser: (user: User
                 <p>{comparisonTarget.format} · {comparisonTarget.blocks.length} {comparisonTarget.format === 'PDF' ? '页' : '段'} · {disciplineLabel(comparisonTarget.field, comparisonTarget.discipline)}</p>
                 {comparisonPaper && <label><input type="checkbox" checked={saveComparison} onChange={(event) => setSaveComparison(event.target.checked)} /> 同时保存到论文库</label>}
                 <label className="question">对照章节<select value={comparisonSection} onChange={(event) => setComparisonSection(event.target.value)}><option value="">摘要 / 前 3 段</option>
-                  {readingSections(comparisonTarget.blocks).map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}</select></label>
+                  {readerSections(comparisonTarget.blocks).filter(({ kind }) => !kind).map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}</select></label>
               </div>}
               <div className="form-actions"><span>对照当前精读章节与所选材料。</span><button className="primary" disabled={!comparisonTarget || !activeModel || !!busy || comparisonBusy}><Columns3 size={15} /> 对照讲解</button></div>
             </form>
@@ -542,7 +672,7 @@ function WorkspaceApp({ user, onUser }: { user: User | null; onUser: (user: User
     </div></div>
     <Preferences dialog={preferences} user={user} onUser={onUser} theme={theme} onTheme={changeTheme} tab={settingsTab} onTab={setSettingsTab}
       modelPanel={<ModelSettings key={settingsVersion + ':' + (connection?.model || 'default')}
-        current={connection} fallback={fallback} remembered={remembered} onChange={changeModel} onClose={() => preferences.current?.close()} />}
+        current={connection} fallback={fallback} remembered={remembered} savedApis={savedApis} onRemoveApi={removeApi} onRenameApi={renameApi} onChange={changeModel} onClose={() => preferences.current?.close()} />}
       style={style} onStyle={(next) => {
       setStyle(next)
       try { rememberStyle(owner, next) } catch { setStorageMessage('浏览器未能保存讲解偏好。') }
@@ -570,15 +700,24 @@ function WorkspaceApp({ user, onUser }: { user: User | null; onUser: (user: User
     }} />
     <dialog ref={modal} onCancel={(event) => { if (importBusy) event.preventDefault() }}>
       <form onSubmit={addPaper}>
-        <header><h2>导入论文</h2><button type="button" className="icon-button" aria-label="关闭" disabled={importBusy} onClick={() => modal.current?.close()}><X size={19} /></button></header>
-        <label>选择文件（PDF、DOCX、Markdown、TXT）<input type="file" accept=".pdf,.docx,.md,.txt" onChange={(event) => setFile(event.target.files?.[0])} disabled={importBusy} /></label>
-        {file && <p className="subtle">已选择 {file.name}</p>}
-        <label>学科领域<select required value={importField} disabled={!!project || importBusy} onChange={(event) => { setImportField(event.target.value as Field | ''); setImportDiscipline('') }}><option value="">请选择领域</option>{Object.entries(fields).map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select></label>
-        {importField && <DisciplineSelect field={importField} value={importDiscipline} onChange={setImportDiscipline} disabled={!!project || importBusy} />}
+        <header><h2>{importProject ? '添加项目论文' : '导入论文'}</h2><button type="button" className="icon-button" aria-label="关闭" disabled={importBusy} onClick={() => modal.current?.close()}><X size={19} /></button></header>
+        <p className="subtle">{importProject ? '添加到「' + importProject.title + '」' : '导入到「我的论文」，按所选领域归类。'}</p>
+        {selectablePapers.length > 0 && !file && <label>从已有论文选择<select value={existingPaperId} disabled={importBusy} onChange={(event) => setExistingPaperId(event.target.value)}>
+          <option value="">上传文件或粘贴正文</option>
+          {selectablePapers.map((item) => <option key={item.id} value={item.id}>{item.historyTitle || item.title}</option>)}
+        </select></label>}
+        {!existingPaperId && <>
+        {file ? <div className="form-actions"><span>已选择 {file.name}</span><button type="button" disabled={importBusy} onClick={() => { setFile(undefined); setImportError('') }}>更换文件</button></div> :
+          <label>选择文件（PDF、DOCX、Markdown、TXT）<input type="file" accept=".pdf,.docx,.md,.txt" onChange={(event) => {
+            const selected = event.target.files?.[0]; if (selected) void selectImportFile(selected)
+          }} disabled={importBusy} /></label>}
+        <label>学科领域<select required value={importFieldChoice} disabled={!!importProject || importBusy} onChange={(event) => { setImportFieldChoice(event.target.value); setImportDiscipline('') }}><option value="">请选择领域</option>{libraryFields.map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select></label>
+        {importField && <DisciplineSelect field={importField} value={importDiscipline} onChange={setImportDiscipline} disabled={!!importProject?.discipline || importBusy} required />}
         <label>或粘贴论文标题<input value={importName} maxLength={180} onChange={(event) => setImportName(event.target.value)} disabled={!!file || importBusy} /></label>
         <label>论文正文<textarea value={importText} rows={4} maxLength={100000} onChange={(event) => setImportText(event.target.value)} disabled={!!file || importBusy} /></label>
+        </>}
         {importError && <p className="warning" role="alert">{importError}</p>}
-        <button className="primary" disabled={importBusy || !importField || (!file && !importText.trim())}>{importBusy ? '正在提取文段…' : '导入到论文库'}</button>
+        <button className="primary" disabled={importBusy || (!existingPaperId && (!validImportDiscipline || (!file && !importText.trim())))}>{importBusy ? '正在处理…' : opensExistingPaper ? '打开论文' : importProject ? '添加到项目' : '导入到我的论文'}</button>
       </form>
     </dialog>
   </>

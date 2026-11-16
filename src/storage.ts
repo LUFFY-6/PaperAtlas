@@ -94,8 +94,32 @@ export async function saveReading(id: string, state: unknown, owner = '') {
 export function recallConnection(owner = ''): Connection | null {
   try {
     const saved = JSON.parse(localStorage.getItem(key(owner)) ?? 'null')
-    return typeof saved?.base === 'string' && typeof saved.model === 'string' && typeof saved.key === 'string' ? saved : null
+    return isConnection(saved) ? saved : null
   } catch { return null }
+}
+
+function isConnection(value: unknown): value is Connection {
+  const item = value as Partial<Connection> | null
+  return typeof item?.base === 'string' && typeof item.model === 'string' && typeof item.key === 'string'
+}
+
+export function sameApi(a: Connection | null, b: Connection) {
+  return a?.base.replace(/\/+$/, '') === b.base.replace(/\/+$/, '') && a.key === b.key
+}
+
+const savedApiKey = (owner: string) => 'paper-atlas-saved-apis-' + owner
+
+export function recallApis(owner: string): Connection[] {
+  const active = recallConnection(owner)
+  try {
+    const value: unknown = JSON.parse(localStorage.getItem(savedApiKey(owner)) ?? '[]')
+    const list = Array.isArray(value) ? value.filter(isConnection) : []
+    return active && !list.some((item) => sameApi(item, active)) ? [active, ...list] : list
+  } catch { return active ? [active] : [] }
+}
+
+export function rememberApis(owner: string, apis: Connection[]) {
+  localStorage.setItem(savedApiKey(owner), JSON.stringify(apis))
 }
 export function rememberConnection(connection: Connection | null, owner = '') {
   if (connection) localStorage.setItem(key(owner), JSON.stringify(connection))

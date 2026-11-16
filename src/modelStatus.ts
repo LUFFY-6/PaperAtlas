@@ -2,7 +2,7 @@ import type { Connection } from './ModelSettings'
 import { guestProfile } from './persona'
 import { readEffort } from './effort'
 
-type Status = { lastOkAt?: number; lastError?: string }
+export type Status = { lastOkAt?: number; lastError?: string }
 const routes = new Set(['/api/chat', '/api/explain', '/api/discover', '/api/model/test'])
 const key = (connection?: Pick<Connection, 'base' | 'model'> | null) =>
   'paper-atlas-model-status-' + (connection ? connection.base.trim() + '#' + connection.model.trim() : 'default')

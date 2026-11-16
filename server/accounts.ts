@@ -3,7 +3,7 @@ import { mkdirSync } from 'node:fs'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { DatabaseSync } from 'node:sqlite'
 import { promisify } from 'node:util'
-import { disciplineOptions, fields, type Field } from '../src/papers.ts'
+import { fields, validDiscipline, type Field } from '../src/papers.ts'
 import { normalizeProfile, profileFields, profileGoals } from '../src/persona.ts'
 
 const derive = promisify(scrypt)
@@ -109,8 +109,7 @@ export async function accountRoute(path: string, req: IncomingMessage, res: Serv
     const title = typeof body.title === 'string' ? body.title.trim() : ''
     const discipline = typeof body.discipline === 'string' ? body.discipline.trim() : ''
     if (typeof field !== 'string' || !Object.hasOwn(fields, field) || !title || title.length > 80
-      || discipline.length > 60 || field === 'custom' && !discipline
-      || field !== 'custom' && discipline && !disciplineOptions(field as Field).some(([id]) => id === discipline)) {
+      || !validDiscipline(field as Field, discipline)) {
       json(400, { error: '请填写项目名和学科。' })
       return true
     }

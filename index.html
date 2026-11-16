@@ -2,11 +2,20 @@
 <html lang="zh-CN">
   <head>
     <script>
+      const page = document.documentElement
       try {
         const theme = localStorage.getItem('paper-atlas-theme')
-        document.documentElement.dataset.theme = theme === 'light' || theme === 'dark' ? theme : 'system'
+        page.dataset.theme = theme === 'light' || theme === 'dark' ? theme : 'system'
       } catch {}
+      let playedIntro = false
+      try { playedIntro = sessionStorage.getItem('atlas-intro') === '2' } catch {}
+      if (!playedIntro) page.setAttribute('data-intro-pending', '')
     </script>
+    <style>
+      html[data-intro-pending] { color-scheme: light dark; background-color: light-dark(#f4efe2, #0d0f0e); }
+      html[data-intro-pending][data-theme="light"] { color-scheme: light; }
+      html[data-intro-pending][data-theme="dark"] { color-scheme: dark; }
+    </style>
     <link rel="icon" type="image/svg+xml" href="%BASE_URL%favicon.svg" />
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />

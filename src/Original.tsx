@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import type { PDFDocumentProxy, TextLayer } from 'pdfjs-dist'
 import { openPdf } from './pdf'
 
-function matchQuote(container: HTMLElement, quote: string) {
+function matchQuote(container: HTMLElement, quote: string, offset?: number, unique = false) {
   const nodes: { node: Text; start: number; length: number }[] = []
   let text = ''
   const doc = container.ownerDocument
@@ -15,7 +15,9 @@ function matchQuote(container: HTMLElement, quote: string) {
     text += value
   }
   const search = quote.replace(/\s/gu, '')
-  const start = text.indexOf(search)
+  const firstMatch = text.indexOf(search)
+  const start = offset !== undefined && text.startsWith(search, offset) ? offset
+    : unique && firstMatch >= 0 && text.indexOf(search, firstMatch + 1) >= 0 ? -1 : firstMatch
   if (!search || start < 0) return
   function locate(index: number) {
     const { node, start: offset } = nodes.find(({ start, length }) => index < start + length)!
@@ -32,19 +34,19 @@ function matchQuote(container: HTMLElement, quote: string) {
   return range
 }
 
-export function PdfOriginal({ original, page: requestedPage, quote }: { original: Blob; page: number; quote?: string }) {
+export function PdfOriginal({ original, page, quote, quoteOffset, sectionText, locationRequest }: {
+  original: Blob; page: number; quote?: string; quoteOffset?: number; sectionText?: string; locationRequest?: number
+}) {
   const wrapper = useRef<HTMLDivElement>(null)
   const canvas = useRef<HTMLCanvasElement>(null)
   const layer = useRef<HTMLDivElement>(null)
   const [pdf, setPdf] = useState<PDFDocumentProxy>()
   const [width, setWidth] = useState(0)
+  const [zoom, setZoom] = useState(100)
   const [tint, setTint] = useState(true)
   const [loadError, setLoadError] = useState(false)
-  const [render, setRender] = useState<{ page: number; ok: boolean; scale: number; unit: number }>()
+  const [render, setRender] = useState<{ page: number; ok: boolean; scale: number; unit: number; width: number }>()
   const [marks, setMarks] = useState<CSSProperties[]>([])
-  const [near, setNear] = useState<{ source: number; quote: string; page?: number; dismissed?: boolean }>()
-  const search = near?.source === requestedPage && near.quote === quote ? near : undefined
-  const page = search?.page ?? requestedPage
   useEffect(() => {
     const element = wrapper.current
     if (!element) return
@@ -70,9 +72,9 @@ export function PdfOriginal({ original, page: requestedPage, quote }: { original
     let task: ReturnType<Awaited<ReturnType<PDFDocumentProxy['getPage']>>['render']> | undefined
     void Promise.all([pdf.getPage(page), import('pdfjs-dist')]).then(async ([current, { TextLayer }]) => {
       if (disposed || !canvas.current || !layer.current) return
-      const scale = width / current.getViewport({ scale: 1 }).width
+      const scale = width * zoom / 100 / current.getViewport({ scale: 1 }).width
       const viewport = current.getViewport({ scale })
-      const pixelRatio = Math.min(2, window.devicePixelRatio || 1)
+      const pixelRatio = Math.min(2, window.devicePixelRatio || 1, Math.sqrt(12_000_000 / (viewport.width * viewport.height)))
       const surface = canvas.current
       surface.width = Math.ceil(viewport.width * pixelRatio)
       surface.height = Math.ceil(viewport.height * pixelRatio)
@@ -81,61 +83,77 @@ export function PdfOriginal({ original, page: requestedPage, quote }: { original
       text = new TextLayer({ textContentSource: current.streamTextContent(), container: layer.current, viewport })
       task = current.render({ canvas: surface, viewport, transform: [pixelRatio, 0, 0, pixelRatio, 0, 0] })
       await Promise.all([task.promise, text.render()])
-      if (!disposed) setRender({ page, ok: true, scale, unit: current.userUnit })
-    }).catch(() => { if (!disposed) setRender({ page, ok: false, scale: 1, unit: 1 }) })
+      if (!disposed) setRender({ page, ok: true, scale, unit: current.userUnit, width: viewport.width })
+    }).catch(() => { if (!disposed) setRender({ page, ok: false, scale: 1, unit: 1, width }) })
     return () => { disposed = true; text?.cancel(); task?.cancel() }
-  }, [pdf, page, width])
+  }, [pdf, page, width, zoom])
   useEffect(() => {
     const element = layer.current
-    const range = quote && element && render?.ok && render.page === page ? matchQuote(element, quote) : undefined
+    const target = sectionText || quote
+    const range = target && element && render?.ok && render.page === page
+      ? matchQuote(element, target, sectionText ? undefined : quoteOffset, true) : undefined
     if (!range || !element) {
       setMarks([])
-      if (!render?.ok || render.page !== page || !quote || !pdf || search) return
-      let active = true
-      const wanted = quote.replace(/\s/gu, '')
-      void (async () => {
-        for (const adjacent of [requestedPage - 1, requestedPage + 1, requestedPage - 2, requestedPage + 2]) {
-          if (adjacent < 1 || adjacent > pdf.numPages) continue
-          const candidate = await (await pdf.getPage(adjacent)).getTextContent()
-          const text = candidate.items.map((item) => 'str' in item ? item.str : '').join('').replace(/\s/gu, '')
-          if (text.includes(wanted)) {
-            if (active) setNear({ source: requestedPage, quote, page: adjacent })
-            return
-          }
-        }
-        if (active) setNear({ source: requestedPage, quote })
-      })().catch(() => { if (active) setNear({ source: requestedPage, quote }) })
-      return () => { active = false }
+      return
     }
     const box = element.getBoundingClientRect()
-    const next = Array.from(range.getClientRects()).filter((rect) => rect.width && rect.height).map((rect) => ({
-      left: rect.left - box.left, top: rect.top - box.top, width: rect.width, height: rect.height,
+    const groups: DOMRect[][] = []
+    for (const rect of range.getClientRects()) {
+      if (!rect.width || !rect.height) continue
+      const last = groups.at(-1)?.at(-1)
+      if (!last || rect.top < last.top - last.height || !sectionText && (rect.top > last.bottom + last.height
+        || rect.left > last.right + last.height * 3 || rect.right < last.left - last.height * 3)) groups.push([])
+      groups.at(-1)?.push(rect)
+    }
+    const padding = sectionText ? 9 : 2
+    const frames = groups.map((rects) => ({
+      left: Math.max(0, Math.min(...rects.map((rect) => rect.left)) - box.left - padding),
+      top: Math.max(0, Math.min(...rects.map((rect) => rect.top)) - box.top - padding),
+      right: Math.min(box.width, Math.max(...rects.map((rect) => rect.right)) - box.left + padding),
+      bottom: Math.min(box.height, Math.max(...rects.map((rect) => rect.bottom)) - box.top + padding),
     }))
-    setMarks(next)
-    if (next.length) range.startContainer.parentElement?.scrollIntoView({ block: 'nearest' })
-  }, [page, quote, render, pdf, requestedPage, search])
+    setMarks(frames.map(({ left, top, right, bottom }) => ({ left, top, width: right - left, height: bottom - top })))
+    const first = frames[0]
+    const pane = element.closest<HTMLElement>('.reading-original')
+    if (first && pane) {
+      pane.scrollTop += box.top + first.top - pane.getBoundingClientRect().top - Math.min(70, pane.clientHeight / 5)
+      const viewport = element.closest<HTMLElement>('.pdf-viewport')
+      if (viewport) {
+        const visible = viewport.getBoundingClientRect()
+        if (box.left + first.left < visible.left || box.left + first.right > visible.right) {
+          viewport.scrollLeft += box.left + first.left - visible.left - 12
+        }
+      }
+    }
+  }, [page, quote, quoteOffset, sectionText, render, locationRequest])
   const error = loadError || render?.page === page && !render.ok
   return <div className="pdf-original" ref={wrapper} data-tint={tint}>
-    <div className="original-tools" aria-label="纸张显示">
+    <div className="original-tools" role="group" aria-label="PDF 显示">
       <button className="secondary" aria-pressed={!tint} onClick={() => setTint(false)}>原色</button>
       <button className="secondary" aria-pressed={tint} onClick={() => setTint(true)}>护眼</button>
+      <div className="pdf-zoom" role="group" aria-label="PDF 缩放">
+        <button className="secondary" aria-label="缩小 PDF" disabled={zoom <= 50 || error} onClick={() => setZoom((value) => Math.max(50, value - 25))}>−</button>
+        <button className="secondary" aria-label={`${zoom}%，恢复适宽`} title="恢复适宽" onClick={() => setZoom(100)}>{zoom}%</button>
+        <button className="secondary" aria-label="放大 PDF" disabled={zoom >= 250 || error} onClick={() => setZoom((value) => Math.min(250, value + 25))}>+</button>
+      </div>
     </div>
-    {search && !search.dismissed && render?.page === page && !marks.length && <p className="warning" role="status">未能在此页高亮，引文来自第 {requestedPage} 页 <button onClick={() => setNear({ ...search, dismissed: true })}>关闭</button></p>}
+    {(sectionText || quote) && render?.ok && render.page === page && !marks.length && <p className="warning" role="status">第 {page} 页暂时无法准确框出{sectionText ? '本节原文' : '这段引文'}，可切换到「引用文本」核对。</p>}
     {error ? <p role="alert">原版暂时无法渲染，可打开原文件。</p> : render?.page !== page && <p role="status">正在渲染 PDF 第 {page} 页…</p>}
-    <div className="pdf-surface" hidden={error || render?.page !== page} style={{
+    <div className="pdf-viewport"><div className="pdf-surface" hidden={error || render?.page !== page} style={{
+      width: render?.width,
       '--scale-factor': render?.scale ?? 1, '--user-unit': render?.unit ?? 1,
       '--total-scale-factor': (render?.scale ?? 1) * (render?.unit ?? 1), '--scale-round-x': '1px', '--scale-round-y': '1px',
     } as CSSProperties}>
       <canvas ref={canvas} aria-label={`PDF 第 ${page} 页原版`} />
       <div className="textLayer" ref={layer} />
-      {marks.map((style, index) => <mark className="pdf-citation" style={style} key={index} aria-hidden="true" />)}
-    </div>
+      {marks.map((style, index) => <mark className={sectionText ? 'pdf-citation pdf-section-frame' : 'pdf-citation'} style={style} key={index} aria-hidden="true" />)}
+    </div></div>
   </div>
 }
 
 type OriginalTextProps = { original: Blob; quote?: string; anchor?: string }
 
-export function WordOriginal({ original, quote, anchor, onSelection }: OriginalTextProps & { onSelection?: (text: string) => void }) {
+export function WordOriginal({ original, quote, anchor, onSelection }: OriginalTextProps & { onSelection?: (text: string, box?: DOMRect) => void }) {
   const frame = useRef<HTMLIFrameElement>(null)
   const [html, setHtml] = useState('')
   const [loaded, setLoaded] = useState(false)
@@ -169,12 +187,23 @@ export function WordOriginal({ original, quote, anchor, onSelection }: OriginalT
     return () => observer.disconnect()
   }, [loaded])
   useEffect(() => {
-    const doc = loaded && frame.current?.contentDocument
-    if (!doc || !onSelection) return
-    const capture = () => onSelection(doc.getSelection()?.toString().trim().slice(0, 2200) ?? '')
-    doc.addEventListener('mouseup', capture)
+    const element = frame.current
+    const doc = loaded && element?.contentDocument
+    if (!element || !doc || !onSelection) return
+    const capture = () => {
+      const selected = doc.getSelection()
+      if (!selected || selected.isCollapsed || !selected.rangeCount) { onSelection(''); return }
+      const rects = selected.getRangeAt(0).getClientRects()
+      const rect = rects[rects.length - 1]
+      const frameBox = element.getBoundingClientRect()
+      if (rect) onSelection(selected.toString(), new DOMRect(
+        frameBox.left + element.clientLeft + rect.left, frameBox.top + element.clientTop + rect.top, rect.width, rect.height))
+    }
+    const clear = () => onSelection('')
+    doc.addEventListener('pointerup', capture)
     doc.addEventListener('keyup', capture)
-    return () => { doc.removeEventListener('mouseup', capture); doc.removeEventListener('keyup', capture) }
+    doc.addEventListener('scroll', clear, true)
+    return () => { doc.removeEventListener('pointerup', capture); doc.removeEventListener('keyup', capture); doc.removeEventListener('scroll', clear, true) }
   }, [loaded, onSelection])
   useEffect(() => {
     const doc = loaded && frame.current?.contentDocument
@@ -184,7 +213,8 @@ export function WordOriginal({ original, quote, anchor, onSelection }: OriginalT
     if (!range) return
     const registry = (doc.defaultView as (Window & typeof globalThis) | null)?.CSS?.highlights
     if (quote && registry) registry.set('word-evidence', new Highlight(range))
-    range.startContainer.parentElement?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+    const view = doc.defaultView
+    if (view) view.scrollBy(0, range.getBoundingClientRect().top - 24)
     return () => { registry?.delete('word-evidence') }
   }, [loaded, quote, anchor])
   return error ? <p role="alert">无法预览 Word 文档，可下载原件。</p>

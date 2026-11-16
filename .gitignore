@@ -3,3 +3,21 @@ node_modules/
 dist/
 .env*
 !.env.example
+
+# Local QA captures and working material
+/qa/
+/docs/*
+!/docs/intro-preview.html
+!/docs/assets/
+/docs/assets/*
+!/docs/assets/intro-desk-prog.webp
+
+# Local databases and exported credentials
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+*.pem
+*.key

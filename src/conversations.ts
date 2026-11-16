@@ -4,6 +4,7 @@ export type Conversation = {
   id: string; owner: string; projectId?: string; title: string
   turns: { role: 'user' | 'assistant'; content: string; model?: string }[]
   model?: string; effort?: 'fast' | 'normal' | 'deep'
+  paperId?: string
   createdAt: number; updatedAt: number
 }
 

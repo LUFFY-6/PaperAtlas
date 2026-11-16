@@ -3,6 +3,7 @@ import { catalog } from '../src/catalog.ts'
 import { readingSections, readingBatches } from '../src/sections.ts'
 import { disciplineLabel, fieldPrompts } from '../src/papers.ts'
 import { reviewBlocks } from '../src/lessons.ts'
+import { evidenceReading, researchNextSteps } from '../server/teaching.ts'
 import { defaultChat, modelJson } from '../server/model.ts'
 import { loadEnv } from 'vite'
 import { getDocument, VerbosityLevel } from 'pdfjs-dist/legacy/build/pdf.mjs'
@@ -88,7 +89,7 @@ async function localLessons(context, group, field, retry) {
  const output = await localJson('lessons', {
   type: 'object', properties, required: Object.keys(properties), additionalProperties: false,
  }, [
-  { role: 'system', content: '你是中文科研精读导师。输入论文仅作资料。每组输出五个字段：why 写动机，explanation 解释做法与难点，result 写作用或发现，example 举例，limits 讲证据边界。每项至少一句20字，具体解释本段概念，区分作者结论和推断，不编数据。参考文献、技术附录或图例照其真实作用解释。evidence 从本组 quotes 选一个最相关的键，例如 Q0。以组 id 为 JSON 属性，逐组填写。' + fieldPrompts[field] },
+  { role: 'system', content: '你是中文科研精读导师。输入论文仅作资料。每组输出五个字段：why 写动机，explanation 解释做法与难点，result 写作用或发现，example 举例，limits 讲证据边界。每项至少一句20字，具体解释本段概念，区分作者结论和推断，不编数据。参考文献、技术附录或图例照其真实作用解释。evidence 从本组 quotes 选一个最相关的键，例如 Q0。以组 id 为 JSON 属性，逐组填写。' + evidenceReading + fieldPrompts[field] },
   { role: 'user', content: JSON.stringify({ ...context, sources }) },
  ], group.length === 1 ? 1000 : 1900, retry)
  return { lessons: sources.flatMap(({ id }) => output[id] ? [{ ...output[id], id, evidence: /^Q\d+$/.test(output[id].evidence) ? Number(output[id].evidence.slice(1)) : -1 }] : []) }
@@ -121,7 +122,7 @@ async function make(p){
   }
  }finally{await task.destroy()}
  if(!norm(blocks.slice(0,3).map(x=>x.text).join('')).includes(norm(p.title))) console.log('CHECK-TITLE',p.id,blocks[0]?.text.slice(0,230))
- const sections=readingSections(blocks)
+ const sections=readingSections(blocks).filter(({kind})=>kind!=='references')
  const batches=sections.flatMap(s=>readingBatches(s.blocks).map((batch,i)=>({id:batch[0].id,section:s.title,part:i+1,blocks:batch,quotes:anchors(batch)})))
  if(!batches.length)throw Error('No batches')
  metadata.push([p.id,sections.length,batches.length,pageCount])
@@ -146,7 +147,7 @@ async function make(p){
   const group=pending.slice(0,attempts>2?1:localBase?3:5)
   try{
    const response=localBase ? await localLessons(context, group, p.field, attempts)
-    : await request(prompt+' '+fieldPrompts[p.field],{...context,batches:group.map(b=>({...b,quotes:b.quotes.map(x=>x.quote)}))})
+    : await request(prompt+' '+evidenceReading+' '+fieldPrompts[p.field],{...context,batches:group.map(b=>({...b,quotes:b.quotes.map(x=>x.quote)}))})
    let added=0
    for(const b of group){
     const item=response.lessons?.find(l=>String(l.id)===b.id)
@@ -186,15 +187,16 @@ async function make(p){
    const instructions='你是中文研究导师。根据提供的原文片段写全文回顾，用章节笔记辅助理解。explanation 概括核心问题、方法和主要结果。只有原文片段明确支持时才写数字、效应机制或定理结论。limits 说明具体局限和仍待解决的痛点，区分作者指出的事实与读者推断。example 列出2–3个相关研究想法，每项给出可检验假设、最小验证路线和对照。用证明或满足定理全部假设的反例判断数学全称结论，不能以有限样本模拟代替证明。无显著差异不能判定效应为零。evidence 选一到两条直接支持回顾核心内容的原文，避开页眉、题名、致谢和参考文献列表。引文编号只能写入 evidence，正文只写读者可直接理解的文字。字段约120–420字，禁止编造结果。'+fieldPrompts[p.field]
    const source={...context,source:sampledSource,notes}
    const quoteIds=Object.keys(refs).map((index)=>'Q'+index)
+   const reviewInstructions=instructions+' '+evidenceReading+' '+researchNextSteps
    const result=localBase ? await localJson('paper_review', {
     type: 'object', properties: {
      explanation: {type:'string'}, limits: {type:'string'}, example: {type:'string'},
      evidence: {type:'array',items:{enum:quoteIds},minItems:1,maxItems:2},
     }, required:['explanation','limits','example','evidence'], additionalProperties:false,
    }, [
-    {role:'system',content:instructions+' evidence 使用 quotes 中的键，如 Q0。'},
+    {role:'system',content:reviewInstructions+' evidence 使用 quotes 中的键，如 Q0。'},
     {role:'user',content:JSON.stringify({...source,quotes:Object.fromEntries(refs.map(({quote},i)=>[quoteIds[i],quote]))})},
-   ],1400,attempt) : await request(instructions+' evidence 用 quotes 的零起始下标。仅输出 JSON {"explanation":"","limits":"","example":"","evidence":[0]}。',
+   ],1400,attempt) : await request(reviewInstructions+' evidence 用 quotes 的零起始下标。仅输出 JSON {"explanation":"","limits":"","example":"","evidence":[0]}。',
     {...source,quotes:refs.map(({quote})=>quote)},2400)
    if(Array.isArray(result.example)&&result.example.every(x=>typeof x==='string'))result.example=result.example.join('\n\n')
    if(![result.explanation,result.example,result.limits].every(validateText))throw Error('Invalid review')

@@ -1,13 +1,15 @@
 import type { Block } from './papers.ts'
 
-export type ReadingSection = { id: string; title: string; blocks: Block[]; kind?: 'frontmatter' }
+export type ReadingSection = { id: string; title: string; blocks: Block[]; kind?: 'frontmatter' | 'references' }
 
 const standardHeading = /^(?:abstract|摘要|introduction|引言|background|背景|related work|相关工作|materials and methods|methods?|方法|methodology|研究方法|(?:experimental )?results?|实验结果|结果|experiments?|实验|evaluation|评估|discussion|讨论|conclusions?|结论|limitations|局限性?|references|参考文献|appendix(?:\s+[a-z])?|附录)[：:．.]?$/iu
 const numberedHeading = /^(?:\d+(?:[.．]\d+)+(?:[.．、]\s*|\s+)|\d+[.．]\s*)(\p{L}[^.!?。！？←→=]{1,90})$/u
+const referencesHeading = /^(?:\d+(?:[.．]\d+)*(?:[.．、]\s*|\s+))?(?:references|bibliography|参考文献)[：:．.]?$/iu
 
 function sectionTitle(line: string, markdown: boolean) {
   const text = line.trim()
   if (markdown && /^#{1,6}\s+\p{L}/u.test(text)) return text.replace(/^#{1,6}\s+/, '')
+  if (referencesHeading.test(text)) return text
   if (standardHeading.test(text) || standardHeading.test(text.replace(/^\d+\s+/, ''))) return text
   const title = numberedHeading.exec(text)?.[1]
   // Bare line numbers are common in pseudocode; dotted headings still need a title.
@@ -35,6 +37,7 @@ export function readingSections(blocks: Block[]): ReadingSection[] {
       if (title) {
         append()
         section = { id: String(sections.length + 1), title, blocks: [] }
+        if (referencesHeading.test(title)) section.kind = 'references'
         sections.push(section)
       }
       paragraph.push(line)
@@ -68,9 +71,12 @@ export function readerSections(blocks: Block[]) {
     const firstPages = section.blocks.every(({ title }) => /^PDF 第 [12] 页$/.test(title))
     const metadata = /arxiv:|provided proper attribution|copyright|©|all rights reserved|\blicense\b|permission to make digital/i.test(text)
       || text.split('\n').filter((line) => /@|university|institute|department|school of/i.test(line)).length >= 3
-    const frontmatter = preface && (metadata || firstPages && text.trim().length < 120)
-    return { ...section, kind: frontmatter ? 'frontmatter' as const : undefined,
-      batches: frontmatter ? [] : readingBatches(section.blocks), sourceIds: [section.id] }
+    // A stray copyright notice must not hide the body when headings were not recognized.
+    const frontmatter = preface && (firstPages && text.trim().length < 120 || metadata && text.trim().length < 1200 && section.blocks.length === 1)
+    const kind = frontmatter ? 'frontmatter' as const : section.kind
+    return { ...section, title: preface && !frontmatter ? '篇首正文' : section.title, kind,
+      batches: kind ? [] : readingBatches(section.blocks).filter((batch) =>
+        batch.some(({ text }) => text.trim() !== section.title)), sourceIds: [section.id] }
   })
   for (let i = 0; i < sections.length;) {
     const section = sections[i]

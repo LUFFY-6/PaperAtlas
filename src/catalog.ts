@@ -1,8 +1,9 @@
 import { disciplines, type Field } from './papers.ts'
 
 type Entry = [id: string, title: string, alternatePdf?: string]
+type StudyDiscipline = { [F in Field]: keyof typeof disciplines[F] }[Field]
 
-const entries: Record<string, Entry[]> = {
+const entries: Record<StudyDiscipline, Entry[]> = {
   computing: [
     ["1706.03762", "Attention Is All You Need"],
     ["1512.03385", "Deep Residual Learning for Image Recognition"],
@@ -111,6 +112,126 @@ const entries: Record<string, Entry[]> = {
     ["w10113", "The Effect of School Choice on Student Outcomes: Evidence from Randomized Lotteries"],
     ["w21705", "Research Design Meets Market Design: Using Centralized Assignment for Impact Evaluation"],
   ],
+  civil: [
+    ["cond-mat/0002177", "Congested Traffic States in Empirical Observations and Microscopic Simulations"],
+    ["2004.04373", "A Review of Vibration-Based Damage Detection in Civil Structures: From Traditional Methods to Machine Learning and Deep Learning Applications"],
+    ["1004.5545", "Three-phase traffic theory and two-phase models with a fundamental diagram in the light of empirical stylized facts"],
+    ["1610.08085", "Derivation, calibration and verification of macroscopic model for urban traffic flow. Part 2"],
+    ["cond-mat/0003269", "Micro- and Macrosimulation of Freeway Traffic"],
+    ["2406.01262", "Structural Health Monitoring with Functional Data: Two Case Studies"],
+    ["2511.00099", "A generative adversarial network optimization method for damage detection and digital twinning by deep AI fault learning: Z24 Bridge structural health monitoring benchmark validation"],
+    ["2512.18780", "Domain Adaptation in Structural Health Monitoring of Civil Infrastructure: A Systematic Review"],
+    ["1709.04875", "Spatio-Temporal Graph Convolutional Networks: A Deep Learning Framework for Traffic Forecasting"],
+    ["1906.00121", "Graph WaveNet for Deep Spatial-Temporal Graph Modeling"],
+  ],
+  materials: [
+    ["1710.10324", "Crystal Graph Convolutional Neural Networks for an Accurate and Interpretable Prediction of Material Properties"],
+    ["1811.05660", "MT-CGCNN: Integrating Crystal Graph Convolutional Neural Network with Multitask Learning for Material Property Prediction"],
+    ["1812.05055", "Graph Networks as a Universal Machine Learning Framework for Molecules and Crystals"],
+    ["2106.01829", "Atomistic Line Graph Neural Network for Improved Materials Property Predictions"],
+    ["2308.14920", "Matbench Discovery -- A framework to evaluate machine learning crystal stability predictions"],
+    ["2010.09990", "The Open Catalyst 2020 (OC20) Dataset and Community Challenges"],
+    ["2504.16893", "Crystal structure prediction with host-guided inpainting generation and foundation potentials"],
+    ["2302.14231", "CHGNet: Pretrained universal neural network potential for charge-informed atomistic modeling"],
+    ["2202.02450", "A Universal Graph Deep Learning Interatomic Potential for the Periodic Table"],
+    ["2403.04217", "Performance Assessment of Universal Machine Learning Interatomic Potentials: Challenges and Directions for Materials' Surfaces"],
+  ],
+  chemistry: [
+    ["1704.01212", "Neural Message Passing for Quantum Chemistry", "https://proceedings.mlr.press/v70/gilmer17a/gilmer17a.pdf"],
+    ["1706.08566", "SchNet: A continuous-filter convolutional neural network for modeling quantum interactions"],
+    ["1902.08408", "PhysNet: A Neural Network for Predicting Energies, Forces, Dipole Moments and Partial Charges"],
+    ["2102.03150", "Equivariant message passing for the prediction of tensorial properties and molecular spectra"],
+    ["1811.02633", "Molecular Transformer - A Model for Uncertainty-Calibrated Chemical Reaction Prediction"],
+    ["2402.17660", "TorchMD-Net 2.0: Fast Neural Network Potentials for Molecular Simulations"],
+    ["2011.14115", "Fast and Uncertainty-Aware Directional Message Passing for Non-Equilibrium Molecules"],
+    ["1610.08935", "ANI-1: An extensible neural network potential with DFT accuracy at force field computational cost"],
+    ["1611.04678", "Machine Learning of Accurate Energy-Conserving Molecular Force Fields"],
+    ["1802.09238", "Towards Exact Molecular Dynamics Simulations with Machine-Learned Force Fields"],
+  ],
+  earth: [
+    ["2202.11214", "FourCastNet: A Global Data-driven High-resolution Weather Model using Adaptive Fourier Neural Operators"],
+    ["2211.02556", "Pangu-Weather: A 3D High-Resolution Model for Fast and Accurate Global Weather Forecast"],
+    ["2002.00469", "WeatherBench: A benchmark dataset for data-driven weather forecasting"],
+    ["2301.10343", "ClimaX: A foundation model for weather and climate"],
+    ["2202.07575", "Forecasting Global Weather with Graph Neural Networks"],
+    ["2003.12140", "MetNet: A Neural Weather Model for Precipitation Forecasting"],
+    ["2510.13050", "An Operational Deep Learning System for Satellite-Based High-Resolution Global Nowcasting"],
+    ["1709.00029", "EuroSAT: A Novel Dataset and Deep Learning Benchmark for Land Use and Land Cover Classification"],
+    ["1902.06148", "BigEarthNet: A Large-Scale Benchmark Archive For Remote Sensing Image Understanding"],
+    ["1906.07789", "SEN12MS -- A Curated Dataset of Georeferenced Multi-Spectral Sentinel-1/2 Imagery for Deep Learning and Data Fusion"],
+  ],
+  linguistics: [
+    ["acl:2020.lrec-1.497", "Universal Dependencies v2: An Evergrowing Multilingual Treebank Collection"],
+    ["acl:W17-6514", "Assessing the Annotation Consistency of the Universal Dependencies Corpora"],
+    ["acl:L14-1045", "Universal Stanford dependencies: A cross-linguistic typology"],
+    ["acl:2021.cl-2.11", "Universal Dependencies"],
+    ["acl:C16-1298", "Universal Reordering via Linguistic Typology"],
+    ["acl:D18-1312", "A Framework for Understanding the Role of Morphology in Universal Dependency Parsing"],
+    ["acl:J19-3005", "Modeling Language Variation and Universals: A Survey on Typological Linguistics for Natural Language Processing"],
+    ["acl:2021.tacl-1.16", "Morphology Matters: A Multilingual Language Modeling Analysis"],
+    ["acl:L18-1719", "Universal Dependencies and Quantitative Typological Trends. A Case Study on Word Order"],
+    ["acl:K17-3001", "CoNLL 2017 Shared Task: Multilingual Parsing from Raw Text to Universal Dependencies"],
+  ],
+  translation: [
+    ["acl:W17-7606", "Universal Dependencies-based syntactic features in detecting human translation varieties"],
+    ["acl:P02-1040", "Bleu: a Method for Automatic Evaluation of Machine Translation"],
+    ["acl:W19-8706", "Translationese Features as Indicators of Quality in English-Russian Human Translation"],
+    ["acl:2020.lrec-1.505", "Lexicogrammatic translationese across two targets and competence levels"],
+    ["acl:W19-5208", "The Effect of Translationese in Machine Translation Test Sets"],
+    ["acl:W18-6319", "A Call for Clarity in Reporting BLEU Scores"],
+    ["acl:2021.tacl-1.87", "Experts, Errors, and Context: A Large-Scale Study of Human Evaluation for Machine Translation"],
+    ["acl:2025.findings-emnlp.1203", "Refined Assessment for Translation Evaluation: Rethinking Machine Translation Evaluation in the Era of Human-Level Systems"],
+    ["acl:2022.lrec-1.186", "DiHuTra: a Parallel Corpus to Analyse Differences between Human Translations"],
+    ["acl:2020.acl-main.448", "Tangled up in BLEU: Reevaluating the Evaluation of Automatic Machine Translation Evaluation Metrics"],
+  ],
+  macro: [
+    ["w9866", "A New Measure of Monetary Shocks: Derivation and Implications"],
+    ["w23968", "Identification in Macroeconomics"],
+    ["w14824", "New-Keynesian Economics: An AS-AD View"],
+    ["w16289", "Empirical Evidence on the Aggregate Effects of Anticipated and Unanticipated U.S. Tax Policy Shocks"],
+    ["w8839", "The Fed and Interest Rates: A High-Frequency Identification"],
+    ["w29572", "Identifying Monetary Policy Shocks Using the Central Bank's Information Set"],
+    ["w30072", "A Structural Approach to High-Frequency Event Studies: The Fed and Markets as Case History"],
+    ["w15784", "On the ease of overstating the fiscal stimulus in the US, 2008-9"],
+    ["w25621", "Public Debt and Low Interest Rates"],
+    ["w10130", "Have National Business Cycles Become More Synchronized?"],
+  ],
+  finance: [
+    ["w7661", "Evaluating the Specification Errors of Asset Pricing Models"],
+    ["w15223", "Securitized Banking and the Run on Repo"],
+    ["w10200", "Wealth Destruction on a Massive Scale? A Study of Acquiring-Firm Returns in the Recent Merger Wave"],
+    ["w13316", "Optimal Property Rights in Financial Contracting"],
+    ["w18104", "Volatility, the Macroeconomy and Asset Prices"],
+    ["w12843", "Risk, Return and Dividends"],
+    ["w10270", "The Declining Equity Premium: What Role Does Macroeconomic Risk Play?"],
+    ["w9217", "The Time Series of the Cross Section of Asset Prices"],
+    ["w11736", "Stock Returns and Expected Business Conditions: Half a Century of Direct Evidence"],
+    ["w2511", "Stock Prices, Earnings and Expected Dividends"],
+  ],
+  edtech: [
+    ["1506.05908", "Deep Knowledge Tracing"],
+    ["1907.06837", "A Self-Attentive model for Knowledge Tracing"],
+    ["1611.08108", "Dynamic Key-Value Memory Networks for Knowledge Tracing"],
+    ["2002.07033", "Towards an Appropriate Query, Key, and Value Computation for Knowledge Tracing"],
+    ["2007.12324", "Context-Aware Attentive Knowledge Tracing"],
+    ["2105.15106", "A Survey of Knowledge Tracing: Models, Variants, and Applications"],
+    ["2105.07909", "Application of Deep Self-Attention in Knowledge Tracing"],
+    ["2512.04869", "Developing a General Personal Tutor for Education"],
+    ["2604.08263", "Neural-Symbolic Knowledge Tracing: Injecting Educational Knowledge into Deep Learning for Responsible Learner Modelling"],
+    ["2410.03017", "Tutor CoPilot: A Human-AI Approach for Scaling Real-Time Expertise"],
+  ],
+  edpsych: [
+    ["w23638", "Using Goals to Motivate College Students: Theory and Evidence from Field Experiments"],
+    ["w27995", "Disentangling Motivation and Study Productivity as Drivers of Adolescent Human Capital Formation: Evidence from a Field Experiment and Structural Analysis"],
+    ["w33380", "Metacognitive Awareness and Academic Performance"],
+    ["w19874", "Present-Bias, Procrastination and Deadlines in a Field Experiment"],
+    ["w18165", "The Behavioralist Goes to School: Leveraging Behavioral Economics to Improve Educational Performance"],
+    ["w19351", "Financial Incentives and Educational Investment: The Impact of Performance-Based Scholarships on Student Time Use"],
+    ["w26059", "The Remarkable Unresponsiveness of College Students to Nudging And What We Can Learn from It"],
+    ["w25036", "When Studying and Nudging Don’t Go as Planned: Unsuccessful Attempts to Help Traditional and Online College Students"],
+    ["w31699", "The Effect of Multitasking on Educational Outcomes and Academic Dishonesty"],
+    ["w35230", "The (Lack of) Efficacy of Social Belonging and Growth Mindset Interventions Among College Students"],
+  ],
 }
 
 export type StudyField = Exclude<Field, 'custom'>
@@ -119,14 +240,16 @@ export type StudyPaper = { id: string; title: string; field: StudyField; discipl
 export const studyFields = Object.keys(disciplines).filter((field): field is StudyField => field !== 'custom')
 
 export const catalog = studyFields.flatMap((field) =>
-  Object.keys(disciplines[field]).flatMap((discipline) => entries[discipline].map(([key, title, alternatePdf]): StudyPaper => {
-    const source = field === 'literature' ? 'dhq' : key.startsWith('w') ? 'nber' : 'arxiv'
-    const url = source === 'dhq' ? 'https://dhq-static.digitalhumanities.org/pdf/' + key + '.pdf'
-      : source === 'nber' ? 'https://www.nber.org/system/files/working_papers/' + key + '/' + key + '.pdf'
-        : 'https://arxiv.org/pdf/' + key
+  (Object.keys(disciplines[field]) as StudyDiscipline[]).flatMap((discipline) => entries[discipline].map(([key, title, alternatePdf]): StudyPaper => {
+    const source = key.startsWith('acl:') ? 'acl' : /^\d{6}$/.test(key) ? 'dhq' : /^w\d+$/.test(key) ? 'nber' : 'arxiv'
+    const id = source === 'acl' ? key.slice(4) : key
+    const url = source === 'acl' ? `https://aclanthology.org/${id}.pdf`
+      : source === 'dhq' ? `https://dhq-static.digitalhumanities.org/pdf/${id}.pdf`
+        : source === 'nber' ? `https://www.nber.org/system/files/working_papers/${id}/${id}.pdf`
+          : `https://arxiv.org/pdf/${id}`
     return {
-      id: source + '-' + key.replace('/', '-'), title, field, discipline, alternatePdf, url,
-      venue: source === 'dhq' ? 'Digital Humanities Quarterly' : source === 'nber' ? 'NBER' : 'arXiv',
+      id: source + '-' + id.replace('/', '-'), title, field, discipline, alternatePdf, url,
+      venue: source === 'acl' ? 'ACL Anthology' : source === 'dhq' ? 'Digital Humanities Quarterly' : source === 'nber' ? 'NBER' : 'arXiv',
     }
   })),
 )
