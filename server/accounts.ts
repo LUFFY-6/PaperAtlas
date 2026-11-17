@@ -22,6 +22,10 @@ function database() {
     CREATE TABLE IF NOT EXISTS profiles (owner TEXT PRIMARY KEY REFERENCES users(id), displayName TEXT NOT NULL, bio TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS sessions (token TEXT PRIMARY KEY, owner TEXT NOT NULL REFERENCES users(id), expires INTEGER NOT NULL);
     CREATE TABLE IF NOT EXISTS projects (id TEXT PRIMARY KEY, owner TEXT NOT NULL REFERENCES users(id), title TEXT NOT NULL, field TEXT NOT NULL, discipline TEXT, created INTEGER NOT NULL);
+    CREATE TABLE IF NOT EXISTS conversations (
+      owner TEXT NOT NULL REFERENCES users(id), id TEXT NOT NULL, payload TEXT,
+      PRIMARY KEY (owner, id)
+    );
   `)
   const columns = new Set(store.prepare('PRAGMA table_info(profiles)').all().map((item) => item.name))
   for (const column of profileFields) if (!columns.has(column)) store.exec(`ALTER TABLE profiles ADD COLUMN ${column} TEXT NOT NULL DEFAULT ''`)
@@ -39,8 +43,8 @@ export function accountUser(req: IncomingMessage) {
 
 const attempts = new Map<string, { count: number; expires: number }>()
 export async function accountRoute(path: string, req: IncomingMessage, res: ServerResponse, json: (status: number, data: unknown) => void) {
-  if (!['/api/session', '/api/register', '/api/login', '/api/logout', '/api/projects', '/api/profile'].includes(path)) return false
-  const reads = req.method === 'GET' && (path === '/api/session' || path === '/api/projects')
+  if (!['/api/session', '/api/register', '/api/login', '/api/logout', '/api/projects', '/api/profile', '/api/conversations'].includes(path)) return false
+  const reads = req.method === 'GET' && ['/api/session', '/api/projects', '/api/conversations'].includes(path)
   if (!reads && (req.method !== 'POST' || path === '/api/session')) {
     json(405, { error: '请求方式不正确。' })
     return true
@@ -67,7 +71,12 @@ export async function accountRoute(path: string, req: IncomingMessage, res: Serv
     json(200, { user: null })
     return true
   }
-  if (['/api/projects', '/api/profile'].includes(path) && !user) { json(401, { error: '请先登录。' }); return true }
+  if (['/api/projects', '/api/profile', '/api/conversations'].includes(path) && !user) { json(401, { error: '请先登录。' }); return true }
+  if (path === '/api/conversations' && user && reads) {
+    const rows = store.prepare('SELECT payload FROM conversations WHERE owner = ? AND payload IS NOT NULL').all(user.id)
+    json(200, { owner: user.id, conversations: rows.map(({ payload }) => JSON.parse(String(payload))) })
+    return true
+  }
   if (path === '/api/projects' && reads && user) {
     json(200, { projects: store.prepare('SELECT id, title, field, discipline FROM projects WHERE owner = ? ORDER BY created DESC').all(user.id) })
     return true
@@ -79,11 +88,57 @@ export async function accountRoute(path: string, req: IncomingMessage, res: Serv
     let length = 0
     for await (const chunk of req) {
       length += chunk.length
-      if (length > 4096) throw Error()
+      if (length > (path === '/api/conversations' ? 8 * 1024 * 1024 : 4096)) {
+        if (path !== '/api/conversations') throw Error()
+        json(413, { error: '要保存的内容过长。' })
+        return true
+      }
       chunks.push(chunk)
     }
     body = JSON.parse(Buffer.concat(chunks).toString()) ?? {}
   } catch { json(400, { error: '请求内容无效。' }); return true }
+  if (path === '/api/conversations' && user) {
+    const { owner, id, action } = body
+    if (owner !== user.id) { json(403, { error: '当前登录账号已变更。' }); return true }
+    if (typeof id !== 'string' || !/^[a-f0-9-]{36}$/i.test(id)) {
+      json(400, { error: '对话编号无效。' }); return true
+    }
+    if (action === 'delete') {
+      store.prepare('INSERT OR REPLACE INTO conversations VALUES (?, ?, NULL)').run(user.id, id)
+      json(200, {}); return true
+    }
+    const row = store.prepare('SELECT payload FROM conversations WHERE owner = ? AND id = ?').get(user.id, id)
+    const current = typeof row?.payload === 'string' ? JSON.parse(row.payload) : undefined
+    if (action === 'import' && row) { json(200, {}); return true }
+    if (action === 'rename' && current && typeof body.title === 'string' && body.title.trim() && body.title.length <= 250) {
+      const updated = { ...current, title: body.title.trim(), updatedAt: Date.now() }
+      store.prepare('UPDATE conversations SET payload = ? WHERE owner = ? AND id = ?').run(JSON.stringify(updated), user.id, id)
+      json(200, { conversation: updated }); return true
+    }
+    if (action !== 'save' && action !== 'import') { json(400, { error: '无法更新这条对话。' }); return true }
+    const candidate = body.conversation as Partial<import('../src/conversations').Conversation> | undefined
+    if (!candidate || candidate.id !== id || typeof candidate.title !== 'string' || candidate.title.length > 250
+      || !Number.isSafeInteger(candidate.createdAt) || !Number.isSafeInteger(candidate.updatedAt)
+      || !Array.isArray(candidate.turns) || !candidate.turns.length
+      || candidate.turns.some((turn) => !turn || !['user', 'assistant'].includes(turn.role)
+        || typeof turn.content !== 'string' || (turn.model !== undefined && typeof turn.model !== 'string'))
+      || [candidate.projectId, candidate.paperId, candidate.model].some((value) => value !== undefined && typeof value !== 'string')
+      || (candidate.effort !== undefined && !['fast', 'normal', 'deep'].includes(candidate.effort))) {
+      json(400, { error: '对话内容无效。' }); return true
+    }
+    if (row && (!current || !current.turns.every((turn: { role: string; content: string; model?: string }, index: number) => {
+      const next = candidate.turns?.[index]
+      return next?.role === turn.role && next.content === turn.content && next.model === turn.model
+    }))) {
+      json(409, { error: '这条对话已在另一设备更新，请刷新后重试。' }); return true
+    }
+    const { projectId, paperId, model, effort, createdAt, updatedAt, turns } = candidate
+    const conversation = { id, owner: user.id, projectId, paperId, model, effort, createdAt,
+      turns: turns.map(({ role, content, model }) => ({ role, content, model })),
+      title: current?.title ?? candidate.title, updatedAt: action === 'import' ? updatedAt : Date.now() }
+    store.prepare('INSERT OR REPLACE INTO conversations VALUES (?, ?, ?)').run(user.id, id, JSON.stringify(conversation))
+    json(200, { conversation }); return true
+  }
   if (path === '/api/profile' && user) {
     const displayName = typeof body.displayName === 'string' ? body.displayName.trim() : ''
     const bio = typeof body.bio === 'string' ? body.bio.trim() : ''

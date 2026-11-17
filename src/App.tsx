@@ -324,9 +324,9 @@ function WorkspaceApp({ user, onUser }: { user: User | null; onUser: (user: User
 
   async function updateConversation(next: Conversation) {
     if (!next.turns.length) return
-    await saveConversation(next, owner)
-    setConversation((current) => current.id === next.id ? next : current)
-    setConversations((items) => [next, ...items.filter(({ id }) => id !== next.id)])
+    const saved = await saveConversation(next, owner)
+    setConversation((current) => current.id === next.id ? saved : current)
+    setConversations((items) => [saved, ...items.filter(({ id }) => id !== next.id)])
   }
 
   async function editConversation(event: FormEvent<HTMLFormElement>) {
@@ -338,9 +338,10 @@ function WorkspaceApp({ user, onUser }: { user: User | null; onUser: (user: User
     setHistoryBusy(true)
     try {
       if (action === 'rename') {
-        await renameConversation(item.id, title, owner)
-        setConversations((items) => items.map((entry) => entry.id === item.id ? { ...entry, title } : entry))
-        setConversation((current) => current.id === item.id ? { ...current, title } : current)
+        const renamed = await renameConversation(item.id, title, owner)
+        if (!renamed) throw new Error('对话已不存在。')
+        setConversations((items) => items.map((entry) => entry.id === item.id ? renamed : entry))
+        setConversation((current) => current.id === item.id ? renamed : current)
       } else {
         await removeConversation(item.id, owner)
         setConversations((items) => items.filter(({ id }) => id !== item.id))
