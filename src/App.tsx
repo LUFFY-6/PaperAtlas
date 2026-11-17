@@ -175,12 +175,34 @@ function WorkspaceApp({ user, onUser }: { user: User | null; onUser: (user: User
   const [importBusy, setImportBusy] = useState(false)
   const [importError, setImportError] = useState('')
   const request = useRef<AbortController | null>(null)
+  const conversationRevision = useRef(0)
   useEffect(() => {
     let active = true
-    void listConversations(owner).then((items) => {
-      if (active) setConversations((current) => [...current, ...items.filter((item) => !current.some(({ id }) => id === item.id))])
-    }).catch(() => { if (active) setStorageMessage('暂时无法读取已保存的对话。') })
-    return () => { active = false }
+    let loading = false
+    async function refreshConversations() {
+      if (loading || (owner && document.visibilityState === 'hidden')) return
+      loading = true
+      const revision = conversationRevision.current
+      try {
+        const items = await listConversations(owner)
+        if (!active || revision !== conversationRevision.current) return
+        setConversations(items)
+        setConversation((current) => items.find(({ id }) => id === current.id) ?? current)
+        setStorageMessage((message) => message === '暂时无法读取已保存的对话。' ? '' : message)
+      } catch {
+        if (active) setStorageMessage('暂时无法读取已保存的对话。')
+      } finally { loading = false }
+    }
+    void refreshConversations()
+    if (owner) {
+      window.addEventListener('focus', refreshConversations)
+      document.addEventListener('visibilitychange', refreshConversations)
+    }
+    return () => {
+      active = false
+      window.removeEventListener('focus', refreshConversations)
+      document.removeEventListener('visibilitychange', refreshConversations)
+    }
   }, [owner])
 
   useEffect(() => { json<{ live: boolean; model: string }>('/api/config').then((info) => setFallback(info.live ? info.model : '')).catch(() => {}) }, [])
@@ -325,6 +347,7 @@ function WorkspaceApp({ user, onUser }: { user: User | null; onUser: (user: User
   async function updateConversation(next: Conversation) {
     if (!next.turns.length) return
     const saved = await saveConversation(next, owner)
+    conversationRevision.current++
     setConversation((current) => current.id === next.id ? saved : current)
     setConversations((items) => [saved, ...items.filter(({ id }) => id !== next.id)])
   }
@@ -340,10 +363,12 @@ function WorkspaceApp({ user, onUser }: { user: User | null; onUser: (user: User
       if (action === 'rename') {
         const renamed = await renameConversation(item.id, title, owner)
         if (!renamed) throw new Error('对话已不存在。')
+        conversationRevision.current++
         setConversations((items) => items.map((entry) => entry.id === item.id ? renamed : entry))
         setConversation((current) => current.id === item.id ? renamed : current)
       } else {
         await removeConversation(item.id, owner)
+        conversationRevision.current++
         setConversations((items) => items.filter(({ id }) => id !== item.id))
         if (conversation.id === item.id) newConversation()
       }
