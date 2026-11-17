@@ -52,7 +52,7 @@ async function getCrossref(doi: string, signal: AbortSignal): Promise<CrossrefWo
   return (await response.json()).message
 }
 
-export function endpoints(config: ModelConfig) {
+export function endpoints(config: ModelConfig, modelAccount = process.env.ATLAS_MODEL_ACCOUNT?.trim() || '') {
   const guestRequests = new Map<string, { count: number; until: number }>()
   return async (req: IncomingMessage, res: ServerResponse, next: () => void) => {
     const url = new URL(req.url ?? '/', 'http://localhost')
@@ -71,7 +71,14 @@ export function endpoints(config: ModelConfig) {
         return json(404, { error: '学习库中没有这篇论文。' })
       } catch { return json(502, { error: '暂时无法取得出版方的原版。' }) }
     }
-    if (url.pathname === '/api/config') return json(200, { live: !!config.key, model: config.model })
+    if (url.pathname === '/api/config') {
+      try {
+        const permitted = !modelAccount || accountUser(req)?.name === modelAccount
+        return json(200, { live: Boolean(config.key && permitted), model: permitted ? config.model : '' })
+      } catch {
+        return json(500, { error: '暂时无法校验登录状态。' })
+      }
+    }
     if (req.method === 'GET' && url.pathname === '/api/library') return json(200, await libraryAvailability())
     try {
       if (await accountRoute(url.pathname, req, res, json)) return
@@ -120,6 +127,9 @@ export function endpoints(config: ModelConfig) {
     const { connection, ...input } = payload ?? {}
     let user
     try { user = accountUser(req) } catch { return json(500, { error: '暂时无法校验登录状态。' }) }
+    if (!connection && modelAccount && user?.name !== modelAccount) {
+      return json(403, { error: '请使用已授权的账号登录后使用默认模型。' })
+    }
     if (!user) {
       // Visitors can try the workbench with the server model; custom providers require a session.
       if (connection || testing || listing) return json(401, { error: '登录后可使用自己的模型接口。' })
